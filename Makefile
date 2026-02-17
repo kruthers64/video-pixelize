@@ -5,6 +5,8 @@ INSTALL_DIR := $(HOME)/.local/share/gegl-0.4/plug-ins
 TEST_IN := test-images
 TEST_OUT := out
 
+phony: all test clean view
+
 CFLAGS := -shared -Werror
 
 all: $(NAME_VID).so $(NAME_PIX).so
@@ -18,10 +20,13 @@ $(NAME_PIX).so: Makefile $(NAME_PIX).c
 	cp -pv $(NAME_PIX).so $(INSTALL_DIR)
 
 test: all
-#	rm -f $(TEST_OUT)/*
-#	for f in $(TEST_IN)/* ; do gegl $$f -o $(TEST_OUT)/`basename $$f` -- kruthers:video-pixels scale-ratio x=6 y=6 sampler=nearest ; done
 	for f in $(TEST_IN)/* ; do gegl $$f -o $(TEST_OUT)/`basename $$f` -- kruthers:video-pixels ; done
-#	qimgv $(TEST_OUT) >> /dev/null 2>&1
+
+clean:
+	rm -vf *.so out/*
+
+view:
+	qimgv $(TEST_OUT) >> /dev/null 2>&1 &
 
 run: all
 	gimp $(TEST_IMAGE)

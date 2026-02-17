@@ -363,15 +363,15 @@ typedef struct _Pattern
     colors      vixels
                             color map
                   44
-    1122        1144        r = 1, 6
-    1122        1144        g = 2, 4, 7
-    1133        1155        b = 3, 5
-    2233        2255
-    2233        2255        grid
-    2211        2266
-    3311        3366        x, y = 0, 1
-    3311        3366        w, h = 4, 9
-    3322        3377
+    rrgg        1144        r = 1, 6
+    rrgg        1144        g = 2, 4, 7
+    rrBB        1155        b = 3, 5
+    ggBB        2255
+    ggBB        2255        grid
+    ggrr        2266
+    BBrr        3366        x, y = 0, 1
+    BBrr        3366        w, h = 4, 9
+    BBgg        3377
                   77
                   77
 */
@@ -389,8 +389,9 @@ typedef struct _Pattern
         -1,-1, 7, 7,
         -1,-1, 7, 7,
     };
-    // 1,2,3 = r,g,b
-    gint colmap1[8] = { 0, 1, 3, 4, 2, 3, 1, 2 };
+    // 1,2,3 = r,g,b    0  1  2  3  4  5  6  7
+    // 1,2,3 = r,g,b       r  g  b  g  b  r  g
+    gint colmap1[8] = { 0, 1, 2, 3, 2, 3, 1, 2 };
     Pattern dev1 = { 0, 1, 4, 9, 8, vixmap1, 4, 12, colmap1 };
 
 /*
@@ -436,7 +437,7 @@ typedef struct _Pattern
         -1, 0 , 9 , 9 , 16, 16, -1,
         -1, -1, -1, -1, 16, 16, -1,
     };
-    // 1,2,3 = r,g,b        1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
+    // 1,2,3 = r,g,b     0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
     gint colmap2[20] = { 0, 1, 3, 2, 2, 1, 3, 2, 1, 3, 3, 2, 1, 1, 3, 2, 1, 1, 3, 2 };
     Pattern dev2 = { 1, 1, 5, 15, 20, vixmap2, 7, 17, colmap2 };
 
@@ -461,9 +462,9 @@ get_cell_mean_values(
     gint u, v, c, vix;
     for (v = 0 ; v < pat->vh ; v++) {
         for (u = 0 ; u < pat->vw ; u++) {
-            // determine which vix we are sampling; ignore indexes of -1 and 0
+            // determine which vix we are sampling; ignore indexes of -1
             vix = pat->vixmap[v * pat->vw + u];
-            if (vix > 0 && vix < pat->vixn) {
+            if (vix > -1) {
                 meanc[vix]++;
                 for (c = 0 ; c < 4 ; c++) {
                     means[vix * 4 + c] += src_buf[(v * pat->vw + u) * 4 + c];
@@ -513,7 +514,7 @@ process3 (GeglOperation       *operation,
          const GeglRectangle *roi,
          gint                 level)
 {
-    Pattern *pat = &dev2;
+    Pattern *pat = &dev1;
 
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
     const Babl *format = gegl_operation_get_format(operation, "output");
@@ -627,9 +628,15 @@ gegl_buffer_set_color (output, roi, color);
                     }
 */
                     /* */
-                    for (c = 0 ; c < 4 ; c++) {
-                        dst_buf[(y * pat->gw + x) * 4 + c] = means[vix * 4 + c];
+                    gfloat phosphor = means[vix * 4 + pat->colmap[vix] - 1];
+                    for (c = 0 ; c < 3 ; c++) {
+                        if (pat->colmap[vix] - 1 == c) {
+                            dst_buf[(y * pat->gw + x) * 4 + c] = means[vix * 4 + c];
+                        } else {
+                            dst_buf[(y * pat->gw + x) * 4 + c] = 0.0;
+                        }
                     }
+                    dst_buf[(y * pat->gw + x) * 4 + c] = means[vix * 4 + 3];
 
                     /* * /
                     dst_buf[(y * pat->gw + x) * 4 + 0] *= cr;

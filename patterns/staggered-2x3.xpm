@@ -1,0 +1,21 @@
+/* XPM */
+static const char *staggered_2x3[] = {
+/* columns rows colors chars-per-pixel */
+"4 11 4 1 ",
+"  c #D8A7E6",
+". c #A7E6C2",
+"X c #A7C0E6",
+"o c white",
+/* pixels */
+"oo..",
+"  ..",
+"  ..",
+"  XX",
+"..XX",
+"..XX",
+"..  ",
+"XX  ",
+"XX  ",
+"XX..",
+"oo.."
+};
