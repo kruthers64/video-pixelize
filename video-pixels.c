@@ -345,8 +345,20 @@ process2 (GeglOperation       *operation,
 
     return TRUE;
 }
+
+// TODO: if gw != vw you're gonna have a bad day... (maybe, or it might be fixed)
+typedef struct _Pattern
+{
+    gint    gx, gy;     // grid start within pattern
+    gint    gw, gh;     // grid cell size
+    gint    vixn;       // number of vixels (ie. video pixels) in pattern + 1 for black
+    gint   *vixmap;     // vixel layout
+    gint    vw, vh;     // full size of vixmap (larger than grid size)
+    gint   *colmap;     // color layout; maps vixels to phosphors
+} Pattern;
+
 /*
-    dev pattern:
+    dev pattern 1:
 
     colors      vixels
                             color map
@@ -363,20 +375,7 @@ process2 (GeglOperation       *operation,
                   77
                   77
 */
-
-typedef struct _Pattern
-{
-    gint    gx, gy;     // grid start within pattern
-    gint    gw, gh;     // grid cell size
-    gint    vixn;       // number of vixels (ie. video pixels) in pattern
-    gint   *vixmap;     // vixel layout
-    gint    vw, vh;     // full size of vixmap (larger than grid size)
-    gint   *colmap;     // color layout; maps vixels to phosphors
-} Pattern;
-
-// TODO: if gw != vw you're gonna have a bad day... (maybe, or it might be fixed)
-
-    gint vixmap[4*12] = {
+    gint vixmap1[4*12] = {
         -1,-1, 4, 4,
          1, 1, 4, 4,
          1, 1, 4, 4,
@@ -391,9 +390,57 @@ typedef struct _Pattern
         -1,-1, 7, 7,
     };
     // 1,2,3 = r,g,b
-    gint colmap[8] = { 0, 1, 3, 4, 2, 3, 1, 2 };
+    gint colmap1[8] = { 0, 1, 3, 4, 2, 3, 1, 2 };
+    Pattern dev1 = { 0, 1, 4, 9, 8, vixmap1, 4, 12, colmap1 };
 
-    Pattern dev = { 0, 1, 4, 9, 8, vixmap, 4, 12, colmap };
+/*
+    dev pattern 2:
+
+    vixels                          color map
+
+    -1  -1  -1  -1  13  13  -1      r = 1, 5, 8, 12, 13, 16, 17
+    -1  4   4   0   13  13  -1      g = 3, 4, 7, 11, 15, 19
+    -1  4   4   10  10  0   -1      b = 2, 6, 9, 10, 14, 18
+    1   1   0   10  10  17  17
+    1   1   7   7   0   17  17      grid & vixmap
+    -1  0   7   7   14  14  -1
+    -1  5   5   0   14  14  -1      gx, gy = 1, 1
+    -1  5   5   11  11  0   -1      gw, gh = 5, 15
+    2   2   0   11  11  18  18
+    2   2   8   8   0   18  18      vw, vw = 7, 17
+    -1  0   8   8   15  15  -1
+    -1  6   6   0   15  15  -1
+    -1  6   6   12  12  0   -1
+    3   3   0   12  12  19  19
+    3   3   9   9   0   19  19
+    -1  0   9   9   16  16  -1
+    -1  -1  -1  -1  16  16  -1
+*/
+
+    gint vixmap2[7*17] = {
+        -1, -1, -1, -1, 13, 13, -1,
+        -1, 4 , 4 , 0 , 13, 13, -1,
+        -1, 4 , 4 , 10, 10, 0 , -1,
+        1 , 1 , 0 , 10, 10, 17, 17,
+        1 , 1 , 7 , 7 , 0 , 17, 17,
+        -1, 0 , 7 , 7 , 14, 14, -1,
+        -1, 5 , 5 , 0 , 14, 14, -1,
+        -1, 5 , 5 , 11, 11, 0 , -1,
+        2 , 2 , 0 , 11, 11, 18, 18,
+        2 , 2 , 8 , 8 , 0 , 18, 18,
+        -1, 0 , 8 , 8 , 15, 15, -1,
+        -1, 6 , 6 , 0 , 15, 15, -1,
+        -1, 6 , 6 , 12, 12, 0 , -1,
+        3 , 3 , 0 , 12, 12, 19, 19,
+        3 , 3 , 9 , 9 , 0 , 19, 19,
+        -1, 0 , 9 , 9 , 16, 16, -1,
+        -1, -1, -1, -1, 16, 16, -1,
+    };
+    // 1,2,3 = r,g,b        1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
+    gint colmap2[20] = { 0, 1, 3, 2, 2, 1, 3, 2, 1, 3, 3, 2, 1, 1, 3, 2, 1, 1, 3, 2 };
+    Pattern dev2 = { 1, 1, 5, 15, 20, vixmap2, 7, 17, colmap2 };
+
+
 
 static void
 get_cell_mean_values(
@@ -466,7 +513,7 @@ process3 (GeglOperation       *operation,
          const GeglRectangle *roi,
          gint                 level)
 {
-    Pattern *pat = &dev;
+    Pattern *pat = &dev2;
 
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
     const Babl *format = gegl_operation_get_format(operation, "output");
