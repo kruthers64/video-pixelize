@@ -31,33 +31,7 @@
 
 #ifdef GEGL_PROPERTIES
 
-enum_start (gegl_video_degradation_type)
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_STAGGERED, "staggered",
-              N_("Staggered"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_LARGE_STAGGERED, "large-staggered",
-              N_("Large staggered"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_STRIPED, "striped",
-              N_("Striped"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_WIDE_STRIPED, "wide-striped",
-              N_("Wide striped"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_LONG_STAGGERED, "long-staggered",
-              N_("Long staggered"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_3X3, "3x3",
-              N_("3x3"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_LARGE_3X3, "large-3x3",
-              N_("Large 3x3"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_LARGE_2X3, "large-2x3",
-              N_("Large 2x3"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_Hex, "hex",
-              N_("Hex"))
-  enum_value (GEGL_VIDEO_DEGRADATION_TYPE_DOTS, "dots",
-              N_("Dots"))
-enum_end (GeglVideoDegradationPlusType)
-
-property_enum (pattern, _("Pattern"), GeglVideoDegradationPlusType,
-               gegl_video_degradation_type,
-               GEGL_VIDEO_DEGRADATION_TYPE_LARGE_2X3)
-  description (_("Type of RGB pattern to use"))
+#include "video-pixels-gegl-prop.h"
 
 property_boolean (additive, _("Additive"), TRUE)
   description(_("Whether the function adds the result to the original image."))
@@ -346,7 +320,6 @@ process2 (GeglOperation       *operation,
     return TRUE;
 }
 
-// TODO: if gw != vw you're gonna have a bad day... (maybe, or it might be fixed)
 typedef struct _Pattern
 {
     gint    gx, gy;     // grid start within pattern
@@ -442,6 +415,8 @@ typedef struct _Pattern
     Pattern dev2 = { 1, 1, 5, 15, 20, vixmap2, 7, 17, colmap2 };
 
 
+#include "video-pixels-patterns.h"
+
 
 static void
 get_cell_mean_values(
@@ -514,7 +489,7 @@ process3 (GeglOperation       *operation,
          const GeglRectangle *roi,
          gint                 level)
 {
-    Pattern *pat = &dev1;
+    Pattern *pat = patterns[1];
 
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
     const Babl *format = gegl_operation_get_format(operation, "output");

@@ -1,21 +1,26 @@
 /* XPM */
 static const char *staggered_2x3[] = {
 /* columns rows colors chars-per-pixel */
-"4 11 4 1 ",
-"  c #D8A7E6",
-". c #A7E6C2",
-"X c #A7C0E6",
-"o c white",
+"4 12 8 1 ",
+"  c #EC5176",
+". c #36C241",
+"X c #6ADF5E",
+"o c #FE75A7",
+"O c #75ACF9",
+"+ c #ACFD8F",
+"@ c #8BC5FF",
+"# c white",
 /* pixels */
-"oo..",
-"  ..",
-"  ..",
-"  XX",
-"..XX",
-"..XX",
-"..  ",
+"##++",
+"oo++",
+"oo++",
+"oo@@",
+"XX@@",
+"XX@@",
 "XX  ",
-"XX  ",
-"XX..",
-"oo.."
+"OO  ",
+"OO  ",
+"OO..",
+"##..",
+"##.."
 };

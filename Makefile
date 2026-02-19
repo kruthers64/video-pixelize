@@ -5,7 +5,7 @@ INSTALL_DIR := $(HOME)/.local/share/gegl-0.4/plug-ins
 TEST_IN := test-images
 TEST_OUT := out
 
-phony: all test clean view
+phony: all
 
 CFLAGS := -shared -Werror
 
