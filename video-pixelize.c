@@ -16,13 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  *
- * Exchange one color with the other (settable threshold to convert from
- * one color-shade to another...might do wonders on certain images, or be
- * totally useless on others).
+ * Mash-up of Video Degradation and Pixelize, creating a chunky effect
+ * similar to various video displays.
  *
- * Author: Adam D. Moss <adam@foxbox.org>
- *
- * GEGL port: Thomas Manni <thomas.manni@free.fr>
+ * Author: Kruthers <kruthers@kruthers.net>
  *
  */
 
@@ -31,7 +28,7 @@
 
 #ifdef GEGL_PROPERTIES
 
-#include "video-pixels-gegl-prop.h"
+#include "video-pixelize-gegl-enum.h"
 
 property_boolean (additive, _("Additive"), TRUE)
   description(_("Whether the function adds the result to the original image."))
@@ -45,280 +42,11 @@ property_boolean (rotated, _("Rotated"), FALSE)
 
 /* #define GEGL_OP_POINT_FILTER */
 #define GEGL_OP_AREA_FILTER
-#define GEGL_OP_NAME     video_pixels
-#define GEGL_OP_C_SOURCE video-pixels.c
+#define GEGL_OP_NAME     video_pixelize
+#define GEGL_OP_C_SOURCE video-pixelize.c
 
 #include "gegl-op.h"
 
-#define MAX_PATTERNS      10
-#define MAX_PATTERN_SIZE 108
-
-static const gint   pattern_width[MAX_PATTERNS] = { 2, 4, 1, 1, 2, 3, 6, 6, 6, 5 };
-static const gint   pattern_height[MAX_PATTERNS] = { 6, 12, 3, 6, 12, 3, 6, 4, 18, 15 };
-
-static const gint pattern[MAX_PATTERNS][MAX_PATTERN_SIZE] =
-{
-  {
-    0, 1,
-    0, 2,
-    1, 2,
-    1, 0,
-    2, 0,
-    2, 1,
-  },
-  {
-    0, 0, 1, 1,
-    0, 0, 1, 1,
-    0, 0, 2, 2,
-    0, 0, 2, 2,
-    1, 1, 2, 2,
-    1, 1, 2, 2,
-    1, 1, 0, 0,
-    1, 1, 0, 0,
-    2, 2, 0, 0,
-    2, 2, 0, 0,
-    2, 2, 1, 1,
-    2, 2, 1, 1,
-  },
-  {
-    0,
-    1,
-    2,
-  },
-  {
-    0,
-    0,
-    1,
-    1,
-    2,
-    2,
-  },
-  {
-    0, 1,
-    0, 1,
-    0, 2,
-    0, 2,
-    1, 2,
-    1, 2,
-    1, 0,
-    1, 0,
-    2, 0,
-    2, 0,
-    2, 1,
-    2, 1,
-  },
-  {
-    0, 1, 2,
-    2, 0, 1,
-    1, 2, 0,
-  },
-  {
-    0, 0, 1, 1, 2, 2,
-    0, 0, 1, 1, 2, 2,
-    2, 2, 0, 0, 1, 1,
-    2, 2, 0, 0, 1, 1,
-    1, 1, 2, 2, 0, 0,
-    1, 1, 2, 2, 0, 0,
-  },
-  {
-    0, 0, 1, 1, 2, 2,
-    0, 0, 1, 1, 2, 2,
-    1, 2, 2, 0, 0, 1,
-    1, 2, 2, 0, 0, 1,
-  },
-  {
-    2, 2, 0, 0, 0, 0,
-    2, 2, 2, 0, 0, 2,
-    2, 2, 2, 2, 2, 2,
-    2, 2, 2, 1, 1, 2,
-    2, 2, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1,
-    0, 0, 1, 1, 1, 1,
-    0, 0, 0, 1, 1, 0,
-    0, 0, 0, 0, 0, 0,
-    0, 0, 0, 2, 2, 0,
-    0, 0, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2,
-    1, 1, 2, 2, 2, 2,
-    1, 1, 1, 2, 2, 1,
-    1, 1, 1, 1, 1, 1,
-    1, 1, 1, 0, 0, 1,
-    1, 1, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0,
-  },
-  {
-    0, 1, 2, 0, 0,
-    1, 1, 1, 2, 0,
-    0, 1, 2, 2, 2,
-    0, 0, 1, 2, 0,
-    0, 1, 1, 1, 2,
-    2, 0, 1, 2, 2,
-    0, 0, 0, 1, 2,
-    2, 0, 1, 1, 1,
-    2, 2, 0, 1, 2,
-    2, 0, 0, 0, 1,
-    1, 2, 0, 1, 1,
-    2, 2, 2, 0, 1,
-    1, 2, 0, 0, 0,
-    1, 1, 2, 0, 1,
-    1, 2, 2, 2, 0,
-  }
-};
-
-static GeglRectangle
-get_bounding_box (GeglOperation *self)
-{
-  GeglRectangle  result = { 0, 0, 0, 0 };
-  GeglRectangle *in_rect;
-
-  in_rect = gegl_operation_source_get_bounding_box (self, "input");
-  if (in_rect)
-    {
-      result = *in_rect;
-    }
-
-  return result;
-}
-
-static void
-prepare (GeglOperation *operation)
-{
-  const Babl     *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
-
-  GeglOperationAreaFilter *op_area;
-  op_area = GEGL_OPERATION_AREA_FILTER (operation);
-
-  op_area->left   =
-  op_area->right  = 0;//25;
-  op_area->top    =
-  op_area->bottom = 0;//25;
-
-  gegl_operation_set_format (operation, "input", format);
-  gegl_operation_set_format (operation, "output", format);
-
-//    printf("\nkruthers:video-degradation-plus\n");
-//    printf("\n");
-
-}
-
-static gboolean
-process (GeglOperation       *operation,
-         void                *in_buf,
-         void                *out_buf,
-         glong                n_pixels,
-         const GeglRectangle *roi,
-         gint                 level)
-{
-    GeglProperties *o = GEGL_PROPERTIES (operation);
-    gfloat *input  = in_buf;
-    gfloat *output = out_buf;
-    float value;
-    gint x, y;
-    gint real_x, real_y;
-    gint b;
-    gint sel_b;
-    gint idx;
-
-    for (y = 0 ; y < roi->height ; y++) {
-        real_y = roi->y + y;
-        for (x = 0 ; x < roi->width ; x++) {
-            real_x = roi->x + x;
-
-            if (o->rotated) {
-                sel_b = pattern[o->pattern][pattern_width[o->pattern]*
-                (real_x % pattern_height[o->pattern]) +
-                real_y % pattern_width[o->pattern] ];
-            } else {
-                sel_b = pattern[o->pattern][pattern_width[o->pattern]*
-                (real_y % pattern_height[o->pattern]) +
-                real_x % pattern_width[o->pattern] ];
-            }
-
-            for (b = 0; b < 4; b++) {
-                idx = (x + y * roi->width) * 4 + b;
-                if (b < 3 ) {
-                    value = (sel_b == b) ? input[idx] : 0.f;
-                    if (o->additive) {
-                        gfloat temp = value + input[idx];
-                        value = MIN (temp, 1.0);
-                    } else if (o->additive2) {
-                        gfloat temp = value + (input[idx] * 2.0f / 3.0f);
-                        value = MIN (temp, 1.0);
-                    }
-                    output[idx] = value;
-                } else {
-                    output[idx] = input[idx];
-                }
-            }
-        }
-    }
-
-    return TRUE;
-}
-
-static gboolean
-process2 (GeglOperation       *operation,
-         GeglBuffer          *in_buf,
-         GeglBuffer          *out_buf,
-         const GeglRectangle *roi,
-         gint                 level)
-{
-    GeglProperties *o = GEGL_PROPERTIES (operation);
-    GeglBuffer *input  = in_buf;
-    GeglBuffer *output = out_buf;
-    gint x, y;
-
-    gint sx = 10;
-    gint sy = 15;
-    gfloat tmp = 0.0f;
-
-    GeglRectangle *whole_region = gegl_operation_source_get_bounding_box (operation, "input");
-
-    GeglColor *color = gegl_color_new ("white");
-    GeglRandom *r = gegl_random_new();
-
-    gegl_color_set_rgba(
-        color,
-        gegl_random_float(r, x, y, 0, 0),
-        gegl_random_float(r, x, y, 0, 1),
-        gegl_random_float(r, x, y, 0, 2),
-        1.0
-    );
-    gegl_buffer_set_color (output, roi, color);
-
-    printf("rx,ry = %4d,%-4d  rw,rh = %4d,%-4d  x,y = %4d,%-4d  w,h = %4d,%-4d  area = %d\n",
-        whole_region->x, whole_region->y, whole_region->width, whole_region->height,
-        roi->x, roi->y, roi->width, roi->height, roi->width * roi->height);
-    return TRUE;
-
-    for (y = 0 ; y < roi->height ; y += sy) {
-        for (x = 0 ; x < roi->width ; x += sx) {
-
-            // color
-            tmp = (x/sx + y/sy) % 2 ? 1.0 : 0.0;
-            gegl_color_set_rgba(
-                color,
-                tmp, tmp, tmp,
-                /*
-                gegl_random_float(r, x, y, 0, 0),
-                gegl_random_float(r, x, y, 0, 1),
-                gegl_random_float(r, x, y, 0, 2),
-                */
-                1.0
-            );
-
-            // rectangle
-            GeglRectangle rect = { roi->x + x, roi->y + y, sx, sy };
-            gegl_rectangle_intersect (&rect, whole_region, &rect);
-            if (rect.width < 1 || rect.height < 1)
-                continue;
-            gegl_buffer_set_color (output, &rect, color);
-        }
-    }
-    gegl_random_free(r);
-
-    return TRUE;
-}
 
 typedef struct _Pattern
 {
@@ -330,92 +58,26 @@ typedef struct _Pattern
     gint   *colmap;     // color layout; maps vixels to phosphors
 } Pattern;
 
-/*
-    dev pattern 1:
-
-    colors      vixels
-                            color map
-                  44
-    rrgg        1144        r = 1, 6
-    rrgg        1144        g = 2, 4, 7
-    rrBB        1155        b = 3, 5
-    ggBB        2255
-    ggBB        2255        grid
-    ggrr        2266
-    BBrr        3366        x, y = 0, 1
-    BBrr        3366        w, h = 4, 9
-    BBgg        3377
-                  77
-                  77
-*/
-    gint vixmap1[4*12] = {
-        -1,-1, 4, 4,
-         1, 1, 4, 4,
-         1, 1, 4, 4,
-         1, 1, 5, 5,
-         2, 2, 5, 5,
-         2, 2, 5, 5,
-         2, 2, 6, 6,
-         3, 3, 6, 6,
-         3, 3, 6, 6,
-         3, 3, 7, 7,
-        -1,-1, 7, 7,
-        -1,-1, 7, 7,
-    };
-    // 1,2,3 = r,g,b    0  1  2  3  4  5  6  7
-    // 1,2,3 = r,g,b       r  g  b  g  b  r  g
-    gint colmap1[8] = { 0, 1, 2, 3, 2, 3, 1, 2 };
-    Pattern dev1 = { 0, 1, 4, 9, 8, vixmap1, 4, 12, colmap1 };
-
-/*
-    dev pattern 2:
-
-    vixels                          color map
-
-    -1  -1  -1  -1  13  13  -1      r = 1, 5, 8, 12, 13, 16, 17
-    -1  4   4   0   13  13  -1      g = 3, 4, 7, 11, 15, 19
-    -1  4   4   10  10  0   -1      b = 2, 6, 9, 10, 14, 18
-    1   1   0   10  10  17  17
-    1   1   7   7   0   17  17      grid & vixmap
-    -1  0   7   7   14  14  -1
-    -1  5   5   0   14  14  -1      gx, gy = 1, 1
-    -1  5   5   11  11  0   -1      gw, gh = 5, 15
-    2   2   0   11  11  18  18
-    2   2   8   8   0   18  18      vw, vw = 7, 17
-    -1  0   8   8   15  15  -1
-    -1  6   6   0   15  15  -1
-    -1  6   6   12  12  0   -1
-    3   3   0   12  12  19  19
-    3   3   9   9   0   19  19
-    -1  0   9   9   16  16  -1
-    -1  -1  -1  -1  16  16  -1
-*/
-
-    gint vixmap2[7*17] = {
-        -1, -1, -1, -1, 13, 13, -1,
-        -1, 4 , 4 , 0 , 13, 13, -1,
-        -1, 4 , 4 , 10, 10, 0 , -1,
-        1 , 1 , 0 , 10, 10, 17, 17,
-        1 , 1 , 7 , 7 , 0 , 17, 17,
-        -1, 0 , 7 , 7 , 14, 14, -1,
-        -1, 5 , 5 , 0 , 14, 14, -1,
-        -1, 5 , 5 , 11, 11, 0 , -1,
-        2 , 2 , 0 , 11, 11, 18, 18,
-        2 , 2 , 8 , 8 , 0 , 18, 18,
-        -1, 0 , 8 , 8 , 15, 15, -1,
-        -1, 6 , 6 , 0 , 15, 15, -1,
-        -1, 6 , 6 , 12, 12, 0 , -1,
-        3 , 3 , 0 , 12, 12, 19, 19,
-        3 , 3 , 9 , 9 , 0 , 19, 19,
-        -1, 0 , 9 , 9 , 16, 16, -1,
-        -1, -1, -1, -1, 16, 16, -1,
-    };
-    // 1,2,3 = r,g,b     0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
-    gint colmap2[20] = { 0, 1, 3, 2, 2, 1, 3, 2, 1, 3, 3, 2, 1, 1, 3, 2, 1, 1, 3, 2 };
-    Pattern dev2 = { 1, 1, 5, 15, 20, vixmap2, 7, 17, colmap2 };
+#include "video-pixelize-patterns.h"
 
 
-#include "video-pixels-patterns.h"
+static void
+prepare (GeglOperation *operation)
+{
+  const Babl     *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
+
+  GeglOperationAreaFilter *op_area;
+  op_area = GEGL_OPERATION_AREA_FILTER (operation);
+
+  op_area->left   =
+  op_area->right  = 0;//25;  TODO: FIGURE OUT IF PADDING IS NECESSARY
+  op_area->top    =
+  op_area->bottom = 0;//25;
+
+  gegl_operation_set_format (operation, "input", format);
+  gegl_operation_set_format (operation, "output", format);
+}
+
 
 
 static void
@@ -702,18 +364,17 @@ gegl_op_class_init (GeglOpClass *klass)
   filter_class    = GEGL_OPERATION_FILTER_CLASS (klass);
 
   operation_class->prepare = prepare;
-  /* operation_class->get_bounding_box = get_bounding_box; */
 
   filter_class->process    = process3;
 
   gegl_operation_class_set_keys (operation_class,
-    "name",           "kruthers:video-pixels",
-    "title",          _("Video Pixels"),
+    "name",           "kruthers:video-pixelize",
+    "title",          _("Video Pixelize"),
     "categories",     "distort",
     "description", _("This function is a mash-up of Video Degradation and Pixelize, "
                      "creating a chunky effect similar to various video displays."),
     "gimp:menu-path", "<Image>/Filters/Kruthers",
-    "gimp:menu-label", "Video Pixels",
+    "gimp:menu-label", "Video Pixelize",
     NULL);
 }
 
