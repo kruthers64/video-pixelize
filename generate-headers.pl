@@ -16,7 +16,7 @@ enum_end (GeglVideoPixelizeType)
 
 property_enum (pattern, _("Pattern"), GeglVideoPixelizeType,
     gegl_video_pixelize_type, __DEFAULT_ENUM_VALUE__)
-description (_("Type of video pixel pattern to use"))
+description (_("Video pixel pattern"))
 ';
 
 
@@ -334,8 +334,10 @@ sub write_patterns_array {
 
 sub generate_gegl_enum_text {
     my ($pattern) = @_;
+    my $pretty = ucfirst($pattern);
+    $pretty =~ s/[_-]/ /g;
     my $enum = "    enum_value (" . get_gegl_property($pattern) . ", \"${pattern}\",\n";
-    $enum .= "        N_(\"" . ucfirst($pattern) . "\"))\n";
+    $enum .= "        N_(\"${pretty}\"))\n";
     return $enum;
 }
 
