@@ -21,6 +21,9 @@ $(NAME).so: Makefile $(NAME).c config.h $(HEADERS)
 test: all
 	for f in $(TEST_IN)/* ; do gegl $$f -o $(TEST_OUT)/`basename $$f` -- kruthers:$(NAME) ; done
 
+testcmyk: all
+	for f in $(TEST_IN)/* ; do gegl $$f -o $(TEST_OUT)/`basename $$f` -- kruthers:$(NAME) style=cmyk ; done
+
 clean:
 	rm -vf *.so out/*
 
