@@ -33,8 +33,6 @@
 enum_start (gegl_video_pixelize_style)
     enum_value (GEGL_VIDEO_PIXELIZE_STYLE_RGB, "rgb",
         N_("RGB phosphor style"))
-    enum_value (GEGL_VIDEO_PIXELIZE_STYLE_CMYK, "cmyk",
-        N_("CMYK halftone style"))
     enum_value (GEGL_VIDEO_PIXELIZE_STYLE_FULL, "full-color",
         N_("Full color"))
 enum_end (GeglVideoPixelizeStyle)
@@ -86,15 +84,11 @@ typedef struct _Pattern
 
 #include "video-pixelize-patterns.h"
 
-const Babl *rgb_format;
-const Babl *cmyk_format;
 
 static void
 prepare (GeglOperation *operation)
 {
     const Babl     *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
-    cmyk_format = babl_format_with_space ("cmykA float", gegl_operation_get_source_space (operation, "input"));
-    rgb_format = format;
 
     GeglOperationAreaFilter *op_area;
     op_area = GEGL_OPERATION_AREA_FILTER (operation);
@@ -109,14 +103,6 @@ prepare (GeglOperation *operation)
 }
 
 
-static gfloat min3(gfloat f0, gfloat f1, gfloat f2) {
-    if (f0 < f1 && f0 < f2) return f0;
-    if (f1 < f0 && f1 < f2) return f1;
-    if (f2 < f0 && f2 < f1) return f2;
-    return f0;
-}
-
-
 static void
 get_vixel_colors(
     GeglProperties  *o,
@@ -125,9 +111,7 @@ get_vixel_colors(
     gfloat          *vix_rgb,   // return values; float[4] provided by caller
     gint            *scratch    // scratch buffer for mean divisors
 ) {
-    gfloat r, g, b, cyn, mag, yel, blk;
     gint channel;
-    GeglColor *gegl_rgb = gegl_color_new(NULL);
 
     // zero out color arrays
     gint i;
@@ -152,7 +136,7 @@ get_vixel_colors(
         }
     }
 
-    for (vix = 0 ; vix < pat->vixn ; vix++) {
+    for (vix = 1 ; vix < pat->vixn ; vix++) {
         channel = pat->colmap[vix];
 
         // get mean colors (and alpha), used as-is for full color style
@@ -163,60 +147,12 @@ get_vixel_colors(
         // RGB phosphor style
         if (o->style == 0) {
             for (c = 0 ; c < 3 ; c++) {
-                // side effect of this is to make bg color black
                 if (channel - 1 != c) {
                     vix_rgb[vix * 4 + c] = 0.0;
                 }
             }
-
-/*
-        gegl_color_set_pixel(gegl_rgb, rgb_format, &vix_rgb[vix * 4]);
-        gegl_color_get_pixel(gegl_rgb, cmyk_format, tmpcmyk);
-
-        vix_cmy[vix * 4    ] = tmpcmyk[0] * tmpcmyk[3];
-        vix_cmy[vix * 4 + 1] = tmpcmyk[1] * tmpcmyk[3];
-        vix_cmy[vix * 4 + 2] = tmpcmyk[2] * tmpcmyk[3];
-        vix_cmy[vix * 4 + 3] = tmpcmyk[4];
-*/
-
-        // CMYK style
-        } else if (o->style == 1) {
-            r = vix_rgb[vix * 4];
-            g = vix_rgb[vix * 4 + 1];
-            b = vix_rgb[vix * 4 + 2];
-            blk = min3(1.0 - r, 1.0 - g, 1.0 - b);
-            cyn = (1.0 - r - blk) / (1.0 - blk);
-            mag = (1.0 - g - blk) / (1.0 - blk);
-            yel = (1.0 - b - blk) / (1.0 - blk);
-
-            if (channel == 1) {
-                vix_rgb[vix * 4]     = (1.0 - cyn);
-                vix_rgb[vix * 4 + 1] = blk;
-                vix_rgb[vix * 4 + 2] = blk;
-            } else if (channel == 2) {
-                vix_rgb[vix * 4]     = blk;
-                vix_rgb[vix * 4 + 1] = (1.0 - mag);
-                vix_rgb[vix * 4 + 2] = blk;
-            } else if (channel == 3) {
-                vix_rgb[vix * 4]     = blk;
-                vix_rgb[vix * 4 + 1] = blk;
-                vix_rgb[vix * 4 + 2] = (1.0 - yel);
-            } else {
-                vix_rgb[vix * 4]     = 1.0;
-                vix_rgb[vix * 4 + 1] = 1.0;
-                vix_rgb[vix * 4 + 2] = 1.0;
-            }
         }
     }
-/*
-    // TODO: proper "bg" color and/or alpha toggle
-    for (c = 0 ; c < 3 ; c++) {
-        vix_rgb[c] = 0.0;
-        vix_cmy[c] = 1.0;
-    }
-    vix_rgb[3] = 1.0;
-    vix_cmy[3] = 1.0;
-*/
 }
 
 //  Calculate the position of our pattern's grid with respect to the current ROI, using
