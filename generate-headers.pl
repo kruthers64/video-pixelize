@@ -123,12 +123,12 @@ sub get_pattern_data {
         'green' => 2,
         'blue'  => 3,
     };
-    my $colmap = [0];   # always include black
+    my $colmap = [0];   # always include black (bg color)
     my $vixn = 1;
     foreach my $pixel (keys(%{$pal->{'colors'}})) {
         my $n = $pal->{'numbers'}->{$pixel};
         my $c = $pal->{'colors'}->{$pixel};
-        if ($n > -1) {  # don't include white
+        if ($n > -1) {  # don't include white (unused pixels)
             $colmap->[$n] = $colors->{$c};
         }
         # "number of vixels" is highest pixel value plus one, to include black

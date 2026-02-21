@@ -43,6 +43,11 @@ property_enum (style, _("Color style"), GeglVideoPixelizeStyle,
     gegl_video_pixelize_style, GEGL_VIDEO_PIXELIZE_STYLE_RGB)
 description (_("Method of coloring individual video pixels"))
 
+property_boolean (clear_bg, _("Transparent backround pixels"), FALSE)
+description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B. "
+    "They are usually drawn black or white depending on the style; this toggles them to be clear."
+))
+
 property_boolean (brightness, _("Compensate brightness"), FALSE)
 description(_("Adjust colors to approximate brightness of the original image."))
 
@@ -73,10 +78,10 @@ typedef struct _Pattern
 {
     gint    gx, gy;     // grid start within pattern
     gint    gw, gh;     // grid cell size
-    gint    vixn;       // number of vixels (ie. video pixels) in pattern + 1 for black
+    gint    vixn;       // number of vixels (ie. video pixels) in pattern + 1 for "background" pixels
     gint   *vixmap;     // vixel layout
     gint    vw, vh;     // full size of vixmap (larger than grid size)
-    gint   *colmap;     // color layout; maps vixels to phosphors (0 = black, 1,2,3 = r,b,g)
+    gint   *colmap;     // color layout; maps vixels to phosphors (0 = bg, 1,2,3 = r,b,g)
 } Pattern;
 
 #include "video-pixelize-patterns.h"
@@ -114,21 +119,20 @@ static gfloat min3(gfloat f0, gfloat f1, gfloat f2) {
 
 static void
 get_vixel_colors(
-    Pattern             *pat,
-    GeglRectangle       *src_rect,
-    gfloat              *src_buf,
-    gfloat              *vix_rgb,   // return values; float[4] provided by caller
-    gfloat              *vix_cmy,   // return values; float[4] provided by caller
-    gint                *scratch    // scratch buffer for mean divisors
+    GeglProperties  *o,
+    Pattern         *pat,
+    gfloat          *src_buf,
+    gfloat          *vix_rgb,   // return values; float[4] provided by caller
+    gint            *scratch    // scratch buffer for mean divisors
 ) {
     gfloat r, g, b, cyn, mag, yel, blk;
+    gint channel;
     GeglColor *gegl_rgb = gegl_color_new(NULL);
 
     // zero out color arrays
     gint i;
     for (i = 0 ; i < pat->vixn * 4 ; i++) {
         vix_rgb[i] = 0.0;
-        vix_cmy[i] = 0.0;
     }
     for (i = 0 ; i < pat->vixn ; i++)
         scratch[i] = 0;
@@ -137,9 +141,9 @@ get_vixel_colors(
     gint u, v, c, vix;
     for (v = 0 ; v < pat->vh ; v++) {
         for (u = 0 ; u < pat->vw ; u++) {
-            // determine which vix we are sampling; ignore indexes of -1
+            // determine which vix we are sampling; skip bg and unknown
             vix = pat->vixmap[v * pat->vw + u];
-            if (vix > -1) {
+            if (vix > 0) {
                 scratch[vix]++;
                 for (c = 0 ; c < 4 ; c++) {
                     vix_rgb[vix * 4 + c] += src_buf[(v * pat->vw + u) * 4 + c];
@@ -147,13 +151,25 @@ get_vixel_colors(
             }
         }
     }
-gfloat tmpcmyk[5];
-    // mean value = sum / count
-    for (vix = 1 ; vix < pat->vixn ; vix++) {
+
+    for (vix = 0 ; vix < pat->vixn ; vix++) {
+        channel = pat->colmap[vix];
+
+        // get mean colors (and alpha), used as-is for full color style
         for (c = 0 ; c < 4 ; c++) {
             vix_rgb[vix * 4 + c] /= scratch[vix];
         }
 
+        // RGB phosphor style
+        if (o->style == 0) {
+            for (c = 0 ; c < 3 ; c++) {
+                // side effect of this is to make bg color black
+                if (channel - 1 != c) {
+                    vix_rgb[vix * 4 + c] = 0.0;
+                }
+            }
+
+/*
         gegl_color_set_pixel(gegl_rgb, rgb_format, &vix_rgb[vix * 4]);
         gegl_color_get_pixel(gegl_rgb, cmyk_format, tmpcmyk);
 
@@ -161,18 +177,36 @@ gfloat tmpcmyk[5];
         vix_cmy[vix * 4 + 1] = tmpcmyk[1] * tmpcmyk[3];
         vix_cmy[vix * 4 + 2] = tmpcmyk[2] * tmpcmyk[3];
         vix_cmy[vix * 4 + 3] = tmpcmyk[4];
-
-/*
-        // cmyk conversion; note that we're really only outputting CMY without the K
-        r = vix_rgb[vix * 4];
-        g = vix_rgb[vix * 4 + 1];
-        b = vix_rgb[vix * 4 + 2];
-        blk = min3(1.0 - r, 1.0 - g, 1.0 - b);
-        vix_cmy[vix * 4    ] = (1.0 - (1.0 - r - blk) / (1.0 - blk)) * blk;   // cyan
-        vix_cmy[vix * 4 + 1] = (1.0 - (1.0 - g - blk) / (1.0 - blk)) * blk;   // magenta
-        vix_cmy[vix * 4 + 2] = (1.0 - (1.0 - b - blk) / (1.0 - blk)) * blk;   // yellow
-        vix_cmy[vix * 4 + 3] = vix_rgb[vix * 4 + 3];            // alpha
 */
+
+        // CMYK style
+        } else if (o->style == 1) {
+            r = vix_rgb[vix * 4];
+            g = vix_rgb[vix * 4 + 1];
+            b = vix_rgb[vix * 4 + 2];
+            blk = min3(1.0 - r, 1.0 - g, 1.0 - b);
+            cyn = (1.0 - r - blk) / (1.0 - blk);
+            mag = (1.0 - g - blk) / (1.0 - blk);
+            yel = (1.0 - b - blk) / (1.0 - blk);
+
+            if (channel == 1) {
+                vix_rgb[vix * 4]     = (1.0 - cyn);
+                vix_rgb[vix * 4 + 1] = blk;
+                vix_rgb[vix * 4 + 2] = blk;
+            } else if (channel == 2) {
+                vix_rgb[vix * 4]     = blk;
+                vix_rgb[vix * 4 + 1] = (1.0 - mag);
+                vix_rgb[vix * 4 + 2] = blk;
+            } else if (channel == 3) {
+                vix_rgb[vix * 4]     = blk;
+                vix_rgb[vix * 4 + 1] = blk;
+                vix_rgb[vix * 4 + 2] = (1.0 - yel);
+            } else {
+                vix_rgb[vix * 4]     = 1.0;
+                vix_rgb[vix * 4 + 1] = 1.0;
+                vix_rgb[vix * 4 + 2] = 1.0;
+            }
+        }
     }
 /*
     // TODO: proper "bg" color and/or alpha toggle
@@ -200,36 +234,29 @@ static gfloat
 set_pixel_color (
     GeglProperties *o,
     gfloat *dst_buf, gint dst_idx,
-    gfloat *vix_rgb, gfloat *vix_cmy, gint vix_idx,
-    gint channel
+    gfloat *vix_rgb, gint vix_idx,
+    gint channel,
+    gfloat src_alpha
 ) {
     gint c;
 
-    // RGB phosphor style
-    if (o->style == 0) {
-        for (c = 0 ; c < 3 ; c++) {
-            if (channel - 1 == c) {
-                dst_buf[dst_idx + c] = vix_rgb[vix_idx + c];
-            } else {
-                dst_buf[dst_idx + c] = 0.0;
-            }
-        }
-
-    // CMY print style (without the K)
-    } else if (o->style == 1) {
-        for (c = 0 ; c < 3 ; c++) {
-            dst_buf[dst_idx + c] = vix_cmy[vix_idx + c];
-        }
-
-    // full color
-    } else {
-        for (c = 0 ; c < 3 ; c++) {
-            dst_buf[dst_idx + c] = vix_rgb[vix_idx + c];
-        }
+    // color
+    for (c = 0 ; c < 3 ; c++) {
+        dst_buf[dst_idx + c] = vix_rgb[vix_idx + c];
     }
 
     // alpha
-    dst_buf[dst_idx + 3] = vix_rgb[vix_idx + 3];
+    if (channel == 0) {
+        if (o->clear_bg) {
+            dst_buf[dst_idx + 3] = 0.0;
+        } else {
+            // alpha channel for bg color must be set to source alpha; otherwise all bg pixels
+            // in a grid cell will get the same alpha value, causing bad artifacting
+            dst_buf[dst_idx + 3] = src_alpha;
+        }
+    } else {
+        dst_buf[dst_idx + 3] = vix_rgb[vix_idx + 3];
+    }
 }
 
 static gboolean
@@ -263,9 +290,8 @@ process (GeglOperation       *operation,
 
     // arrays for calculating vixel colors
     gfloat *vix_rgb = g_new(gfloat, pat->vixn * 4);
-    gfloat *vix_cmy = g_new(gfloat, pat->vixn * 4);
     gint *scratch = g_new(gint, pat->vixn);
-    gfloat color = 0.0;
+    gfloat src_alpha;
 
     // step through grid cells
     gint gridx, gridy;
@@ -278,7 +304,7 @@ process (GeglOperation       *operation,
 
             // get vixel colors
             gegl_buffer_get(input, src_rect, 1.0, format, src_buf, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
-            get_vixel_colors(pat, src_rect, src_buf, vix_rgb, vix_cmy, scratch);
+            get_vixel_colors(o, pat, src_buf, vix_rgb, scratch);
 
             // process each pixel
             gint x, y, u, v, vix;
@@ -289,7 +315,8 @@ process (GeglOperation       *operation,
                     // determine which vix we are drawing; since we are drawing only within the grid cell
                     // we should not see -1 indexes
                     vix = pat->vixmap[v * pat->vw + u];
-                    set_pixel_color(o, dst_buf, (y * pat->gw + x) * 4, vix_rgb, vix_cmy, vix * 4, pat->colmap[vix]);
+                    src_alpha = src_buf[(v * pat->vw + u) * 4 + 3];
+                    set_pixel_color(o, dst_buf, (y * pat->gw + x) * 4, vix_rgb, vix * 4, pat->colmap[vix], src_alpha);
                 }
             }
 
