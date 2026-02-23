@@ -65,24 +65,19 @@ typedef struct _Pattern
 static void
 prepare (GeglOperation *operation)
 {
-    const Babl     *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
+    const Babl *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
 
     GeglOperationAreaFilter *op_area;
     op_area = GEGL_OPERATION_AREA_FILTER (operation);
 
     op_area->left   =
-    op_area->right  = 0;//25;  TODO: FIGURE OUT IF PADDING IS NECESSARY
+    op_area->right  = 25; //  TODO: FIGURE OUT IF PADDING IS NECESSARY
     op_area->top    =
-    op_area->bottom = 0;//25;
+    op_area->bottom = 25;
 
     gegl_operation_set_format (operation, "input", format);
     gegl_operation_set_format (operation, "output", format);
 }
-
-// TODO: find all unused stuff like this
-const gfloat RLUM = 0.2126;
-const gfloat GLUM = 0.7152;
-const gfloat BLUM = 0.0722;
 
 static void
 get_vixel_colors(
@@ -93,7 +88,6 @@ get_vixel_colors(
     gint            *scratch    // scratch buffer for mean divisors
 ) {
     gint channel;
-    gfloat lum;
 
     // zero out color arrays
     gint i;
@@ -137,17 +131,6 @@ get_vixel_colors(
     }
 }
 
-//  Calculate the position of our pattern's grid with respect to the current ROI, using
-//  the world origin as the canonical start of our grid (ie. keep it aligned to the full
-//  image beyond the current selection).
-//
-//  We should return the closest grid point to the left and above the current ROI, or
-//  the start of the ROI itself if it happens to align perfectly with the grid.
-static gint
-align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin) {
-    return roi_offset - ((roi_offset - world_origin) % grid_size);
-}
-
 static gfloat
 set_pixel_color (
     GeglProperties *o,
@@ -156,9 +139,8 @@ set_pixel_color (
     gint channel,
     gfloat src_alpha
 ) {
-    gint c;
-
     // color
+    gint c;
     for (c = 0 ; c < 3 ; c++) {
         dst_buf[dst_idx + c] = vix_rgb[vix_idx + c];
     }
@@ -177,6 +159,17 @@ set_pixel_color (
     }
 }
 
+//  Calculate the position of our pattern's grid with respect to the current ROI, using
+//  the world origin as the canonical start of our grid (ie. keep it aligned to the full
+//  image beyond the current selection).
+//
+//  We should return the closest grid point to the left and above the current ROI, or
+//  the start of the ROI itself if it happens to align perfectly with the grid.
+static gint
+align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin) {
+    return roi_offset - ((roi_offset - world_origin) % grid_size);
+}
+
 static gboolean
 process (GeglOperation       *operation,
          GeglBuffer          *input,
@@ -185,26 +178,23 @@ process (GeglOperation       *operation,
          gint                 level)
 {
     GeglProperties *o = GEGL_PROPERTIES (operation);
-
     Pattern *pat = patterns[o->pattern];
-
     const Babl *format = gegl_operation_get_format(operation, "output");
 
+    // align grid
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
     gint startx = align_grid(pat->gx, pat->gw, roi->x, world->x);
     gint starty = align_grid(pat->gy, pat->gh, roi->y, world->y);
 
-    // alloc now and reuse as much as possible
+    // allocations
     GeglRectangle *src_rect = gegl_rectangle_new(0, 0, pat->vw, pat->vh);
     GeglRectangle *dst_rect = gegl_rectangle_new(0, 0, pat->gw, pat->gh);
     GeglRectangle *clp_rect = gegl_rectangle_new(0, 0, 0, 0);
-    // dst is always size of grid cell, src is larger to sample pattern overlaps
-    gfloat *src_buf = g_new(gfloat, pat->vw * pat->vh * 4);
-    gfloat *dst_buf = g_new(gfloat, pat->gw * pat->gh * 4);
-
     GeglRectangle *grid_rect = gegl_rectangle_new(0, 0, pat->gw, pat->gh);
     GeglRectangle *gclp_rect = gegl_rectangle_new(0, 0, 0, 0);
-    GeglBuffer *buftmp = gegl_buffer_new(grid_rect, format);
+    gfloat *src_buf = g_new(gfloat, pat->vw * pat->vh * 4);
+    gfloat *dst_buf = g_new(gfloat, pat->gw * pat->gh * 4);
+    GeglBuffer *inter_gbuf = gegl_buffer_new(grid_rect, format);
 
     // arrays for calculating vixel colors
     gfloat *vix_rgb = g_new(gfloat, pat->vixn * 4);
@@ -213,6 +203,7 @@ process (GeglOperation       *operation,
 
     // step through grid cells
     gint gridx, gridy;
+    gint x, y, u, v, vix;
     for (gridy = starty ; gridy < roi->y + roi->height ; gridy += pat->gh) {
         for (gridx = startx ; gridx < roi->x + roi->width ; gridx += pat->gw) {
             src_rect->x = gridx - pat->gx;
@@ -225,7 +216,6 @@ process (GeglOperation       *operation,
             get_vixel_colors(o, pat, src_buf, vix_rgb, scratch);
 
             // process each pixel
-            gint x, y, u, v, vix;
             for (y = 0 ; y < pat->gh ; y++) {
                 v = y + pat->gy;
                 for (x = 0 ; x < pat->gw ; x++) {
@@ -239,22 +229,15 @@ process (GeglOperation       *operation,
             }
 
             // go through an intermediate gegl buffer to more easily handle clipping to roi
-            gegl_buffer_set(buftmp, grid_rect, 0, format, dst_buf, GEGL_AUTO_ROWSTRIDE);
+            gegl_buffer_set(inter_gbuf, grid_rect, 0, format, dst_buf, GEGL_AUTO_ROWSTRIDE);
             gegl_rectangle_intersect(clp_rect, roi, dst_rect);
             gegl_rectangle_set(gclp_rect,
                 clp_rect->x - dst_rect->x, clp_rect->y - dst_rect->y,
                 clp_rect->width, clp_rect->height
             );
 
-            // TODO: remove; in theory this should not happen, but leave for bullet-proofing for now...
-            if (clp_rect->width < 1 || clp_rect->height < 1) {
-                printf("dst_rect = %d,%d,%d,%d   roi = %d,%d,%d,%d\n",
-                    dst_rect->x, dst_rect->y, dst_rect->width, dst_rect->height,
-                    roi->x, roi->y, roi->width, roi->height);
-                continue;
-            }
-
-            gegl_buffer_copy(buftmp, gclp_rect, GEGL_ABYSS_WHITE, output, clp_rect);
+            // write result
+            gegl_buffer_copy(inter_gbuf, gclp_rect, GEGL_ABYSS_CLAMP, output, clp_rect);
         }
     }
 
@@ -267,7 +250,7 @@ process (GeglOperation       *operation,
     g_free(clp_rect);
     g_free(grid_rect);
     g_free(gclp_rect);
-    g_object_unref(buftmp);
+    g_object_unref(inter_gbuf);
 
     return TRUE;
 }
@@ -288,7 +271,7 @@ gegl_op_class_init (GeglOpClass *klass)
         "name",             "kruthers:video-pixelize-core",
         "title",          _("Video Pixelize Core"),
         "categories",       "hidden",
-        "description",    _("This function is a like combination of Video Degradation and Pixelize, "
+        "description",    _("This function is like a combination of Video Degradation and Pixelize, "
                             "creating a chunky pixel effect similar to various video displays."),
         NULL);
 }

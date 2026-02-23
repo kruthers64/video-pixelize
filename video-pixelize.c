@@ -43,10 +43,10 @@ description(_("Some patterns have \"background pixels\" or \"holes\" that are no
 property_boolean (rotate, _("Rotate"), FALSE)
 description(_("Rotate the pattern by ninety degrees."))
 
-property_int    (scale, _("Scale"), 1)
+property_double (scale, _("Scale"), 1)
     description (_("Increase size of video pixels"))
-    value_range (1, 20)
-    ui_range    (1, 20)
+    value_range (1.0, 100.0)
+    ui_range    (1.0, 100.0)
 
 property_enum (sampler_type, _("Resampling method"),
     GeglSamplerType, gegl_sampler_type, GEGL_SAMPLER_NEAREST)
@@ -63,11 +63,11 @@ property_enum (sampler_type, _("Resampling method"),
 
 typedef struct
 {
-  GeglNode *prescale;
-  GeglNode *prerot;
-  GeglNode *videopix;
-  GeglNode *postrot;
-  GeglNode *postscale;
+    GeglNode *prescale;
+    GeglNode *prerot;
+    GeglNode *videopix;
+    GeglNode *postrot;
+    GeglNode *postscale;
 } Nodes;
 
 static void
@@ -154,7 +154,7 @@ gegl_op_class_init (GeglOpClass *klass)
         "name",             "kruthers:video-pixelize",
         "title",          _("Video Pixelize"),
         "categories",       "distort",
-        "description",    _("This function is a like combination of Video Degradation and Pixelize, "
+        "description",    _("This filter is like a combination of Video Degradation and Pixelize, "
                             "creating a chunky pixel effect similar to various video displays."),
         "gimp:menu-path",   "<Image>/Filters/Kruthers",
         "gimp:menu-label",  "Video Pixelize",
