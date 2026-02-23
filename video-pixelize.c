@@ -36,8 +36,8 @@ property_double (color_style, _("Color style:  RGB phosphors <-> Full color"), 0
     ui_range    (0.0, 1.0)
 
 property_boolean (clear_bg, _("Transparent backround pixels"), FALSE)
-description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B. "
-    "They are usually drawn black or white depending on the style; this toggles them to be clear."
+description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B "
+    "so are drawn as always black.  This toggles them to be clear."
 ))
 
 property_boolean (rotate, _("Rotate"), FALSE)
@@ -55,247 +55,100 @@ property_enum (sampler_type, _("Resampling method"),
 
 #else
 
-/* #define GEGL_OP_POINT_FILTER */
-#define GEGL_OP_AREA_FILTER
+#define GEGL_OP_META
 #define GEGL_OP_NAME     video_pixelize
 #define GEGL_OP_C_SOURCE video-pixelize.c
 
 #include "gegl-op.h"
 
-
-typedef struct _Pattern
+typedef struct
 {
-    gint    gx, gy;     // grid start within pattern
-    gint    gw, gh;     // grid cell size
-    gint    vixn;       // number of vixels (ie. video pixels) in pattern + 1 for "background" pixels
-    gint   *vixmap;     // vixel layout
-    gint    vw, vh;     // full size of vixmap (larger than grid size)
-    gint   *colmap;     // color layout; maps vixels to phosphors (0 = bg, 1,2,3 = r,b,g)
-} Pattern;
-
-#include "video-pixelize-patterns.h"
-
+  GeglNode *prescale;
+  GeglNode *prerot;
+  GeglNode *videopix;
+  GeglNode *postrot;
+  GeglNode *postscale;
+} Nodes;
 
 static void
-prepare (GeglOperation *operation)
+update (GeglOperation *operation)
 {
-    const Babl     *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
+    GeglProperties *o     = GEGL_PROPERTIES (operation);
+    Nodes          *nodes = o->user_data;
 
-    GeglOperationAreaFilter *op_area;
-    op_area = GEGL_OPERATION_AREA_FILTER (operation);
+    if (!nodes)
+        return;
 
-    op_area->left   =
-    op_area->right  = 0;//25;  TODO: FIGURE OUT IF PADDING IS NECESSARY
-    op_area->top    =
-    op_area->bottom = 0;//25;
+    float factor = o->scale;
+    float inv_factor = 1.0 / factor;
 
-    gegl_operation_set_format (operation, "input", format);
-    gegl_operation_set_format (operation, "output", format);
-}
+    gegl_node_set (nodes->prescale, "x", inv_factor, "y", inv_factor, NULL);
+    gegl_node_set (nodes->postscale, "x", factor, "y", factor, NULL);
 
-const gfloat RLUM = 0.2126;
-const gfloat GLUM = 0.7152;
-const gfloat BLUM = 0.0722;
-
-static void
-get_vixel_colors(
-    GeglProperties  *o,
-    Pattern         *pat,
-    gfloat          *src_buf,
-    gfloat          *vix_rgb,   // return values; float[4] provided by caller
-    gint            *scratch    // scratch buffer for mean divisors
-) {
-    gint channel;
-    gfloat lum;
-
-    // zero out color arrays
-    gint i;
-    for (i = 0 ; i < pat->vixn * 4 ; i++) {
-        vix_rgb[i] = 0.0;
-    }
-    for (i = 0 ; i < pat->vixn ; i++)
-        scratch[i] = 0;
-
-    // get per-vixel sums and counts to calculate mean vixel color
-    gint u, v, c, vix;
-    for (v = 0 ; v < pat->vh ; v++) {
-        for (u = 0 ; u < pat->vw ; u++) {
-            // determine which vix we are sampling; skip bg and unknown
-            vix = pat->vixmap[v * pat->vw + u];
-            if (vix > 0) {
-                scratch[vix]++;
-                for (c = 0 ; c < 4 ; c++) {
-                    vix_rgb[vix * 4 + c] += src_buf[(v * pat->vw + u) * 4 + c];
-                }
-            }
-        }
-    }
-
-    for (vix = 1 ; vix < pat->vixn ; vix++) {
-        channel = pat->colmap[vix];
-
-        // get mean colors (and alpha), used as-is for full color style
-        for (c = 0 ; c < 4 ; c++) {
-            vix_rgb[vix * 4 + c] /= scratch[vix];
-        }
-
-        // dial in RGB phosphor style depending on slider
-        if (o->color_style < 1.0) {
-            for (c = 0 ; c < 3 ; c++) {
-                if (channel - 1 != c) {
-                    vix_rgb[vix * 4 + c] *= o->color_style;
-                }
-            }
-        }
-    }
-}
-
-//  Calculate the position of our pattern's grid with respect to the current ROI, using
-//  the world origin as the canonical start of our grid (ie. keep it aligned to the full
-//  image beyond the current selection).
-//
-//  We should return the closest grid point to the left and above the current ROI, or
-//  the start of the ROI itself if it happens to align perfectly with the grid.
-static gint
-align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin) {
-    return roi_offset - ((roi_offset - world_origin) % grid_size);
-}
-
-static gfloat
-set_pixel_color (
-    GeglProperties *o,
-    gfloat *dst_buf, gint dst_idx,
-    gfloat *vix_rgb, gint vix_idx,
-    gint channel,
-    gfloat src_alpha
-) {
-    gint c;
-
-    // color
-    for (c = 0 ; c < 3 ; c++) {
-        dst_buf[dst_idx + c] = vix_rgb[vix_idx + c];
-    }
-
-    // alpha
-    if (channel == 0) {
-        if (o->clear_bg) {
-            dst_buf[dst_idx + 3] = 0.0;
-        } else {
-            // alpha channel for bg color must be set to source alpha; otherwise all bg pixels
-            // in a grid cell will get the same alpha value, causing bad artifacting
-            dst_buf[dst_idx + 3] = src_alpha;
-        }
+    if (o->rotate) {
+        gegl_node_set (nodes->prerot,  "degrees", -90.0, NULL);
+        gegl_node_set (nodes->postrot, "degrees",  90.0, NULL);
     } else {
-        dst_buf[dst_idx + 3] = vix_rgb[vix_idx + 3];
+        gegl_node_set (nodes->prerot,  "degrees",   0.0, NULL);
+        gegl_node_set (nodes->postrot, "degrees",   0.0, NULL);
     }
 }
 
-static gboolean
-process (GeglOperation       *operation,
-         GeglBuffer          *input,
-         GeglBuffer          *output,
-         const GeglRectangle *roi,
-         gint                 level)
+static void
+attach (GeglOperation *operation)
 {
-    GeglProperties *o = GEGL_PROPERTIES (operation);
+    GeglProperties  *o     = GEGL_PROPERTIES (operation);
+    GeglNode        *gegl  = operation->node;
 
-    Pattern *pat = patterns[o->pattern];
+    Nodes *nodes = g_malloc0 (sizeof (Nodes));
+    o->user_data = nodes;
 
-    const Babl *format = gegl_operation_get_format(operation, "output");
+    GeglNode *input  = gegl_node_get_input_proxy (gegl, "input");
+    GeglNode *output = gegl_node_get_output_proxy (gegl, "output");
 
-    GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
-    gint startx = align_grid(pat->gx, pat->gw, roi->x, world->x);
-    gint starty = align_grid(pat->gy, pat->gh, roi->y, world->y);
+    nodes->prescale  = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio", NULL);
+    nodes->prerot    = gegl_node_new_child (gegl, "operation", "gegl:rotate", NULL);
+    nodes->videopix  = gegl_node_new_child (gegl, "operation", "kruthers:video-pixelize-core", NULL);
+    nodes->postrot   = gegl_node_new_child (gegl, "operation", "gegl:rotate", NULL);
+    nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio", NULL);
 
-    // alloc now and reuse as much as possible
-    GeglRectangle *src_rect = gegl_rectangle_new(0, 0, pat->vw, pat->vh);
-    GeglRectangle *dst_rect = gegl_rectangle_new(0, 0, pat->gw, pat->gh);
-    GeglRectangle *clp_rect = gegl_rectangle_new(0, 0, 0, 0);
-    // dst is always size of grid cell, src is larger to sample pattern overlaps
-    gfloat *src_buf = g_new(gfloat, pat->vw * pat->vh * 4);
-    gfloat *dst_buf = g_new(gfloat, pat->gw * pat->gh * 4);
+    gegl_node_link_many (input,
+        nodes->prescale,
+        nodes->prerot,
+        nodes->videopix,
+        nodes->postrot,
+        nodes->postscale,
+        output, NULL);
 
-    GeglRectangle *grid_rect = gegl_rectangle_new(0, 0, pat->gw, pat->gh);
-    GeglRectangle *gclp_rect = gegl_rectangle_new(0, 0, 0, 0);
-    GeglBuffer *buftmp = gegl_buffer_new(grid_rect, format);
+    gegl_operation_meta_redirect (operation, "pattern",      nodes->videopix,  "pattern");
+    gegl_operation_meta_redirect (operation, "color-style",  nodes->videopix,  "color-style");
+    gegl_operation_meta_redirect (operation, "clear-bg",     nodes->videopix,  "clear-bg");
 
-    // arrays for calculating vixel colors
-    gfloat *vix_rgb = g_new(gfloat, pat->vixn * 4);
-    gint *scratch = g_new(gint, pat->vixn);
-    gfloat src_alpha;
+    gegl_operation_meta_redirect (operation, "sampler-type", nodes->prescale,  "sampler");
+    gegl_operation_meta_redirect (operation, "sampler-type", nodes->postscale, "sampler");
+    gegl_operation_meta_redirect (operation, "sampler-type", nodes->prerot,    "sampler");
+    gegl_operation_meta_redirect (operation, "sampler-type", nodes->postrot,   "sampler");
+}
 
-    // step through grid cells
-    gint gridx, gridy;
-    for (gridy = starty ; gridy < roi->y + roi->height ; gridy += pat->gh) {
-        for (gridx = startx ; gridx < roi->x + roi->width ; gridx += pat->gw) {
-            src_rect->x = gridx - pat->gx;
-            src_rect->y = gridy - pat->gy;
-            dst_rect->x = gridx;
-            dst_rect->y = gridy;
-
-            // get vixel colors
-            gegl_buffer_get(input, src_rect, 1.0, format, src_buf, GEGL_AUTO_ROWSTRIDE, GEGL_ABYSS_CLAMP);
-            get_vixel_colors(o, pat, src_buf, vix_rgb, scratch);
-
-            // process each pixel
-            gint x, y, u, v, vix;
-            for (y = 0 ; y < pat->gh ; y++) {
-                v = y + pat->gy;
-                for (x = 0 ; x < pat->gw ; x++) {
-                    u = x + pat->gx;
-                    // determine which vix we are drawing; since we are drawing only within the grid cell
-                    // we should not see -1 indexes
-                    vix = pat->vixmap[v * pat->vw + u];
-                    src_alpha = src_buf[(v * pat->vw + u) * 4 + 3];
-                    set_pixel_color(o, dst_buf, (y * pat->gw + x) * 4, vix_rgb, vix * 4, pat->colmap[vix], src_alpha);
-                }
-            }
-
-            // go through an intermediate gegl buffer to more easily handle clipping to roi
-            gegl_buffer_set(buftmp, grid_rect, 0, format, dst_buf, GEGL_AUTO_ROWSTRIDE);
-            gegl_rectangle_intersect(clp_rect, roi, dst_rect);
-            gegl_rectangle_set(gclp_rect,
-                clp_rect->x - dst_rect->x, clp_rect->y - dst_rect->y,
-                clp_rect->width, clp_rect->height
-            );
-
-            // TODO: remove; in theory this should not happen, but leave for bullet-proofing for now...
-            if (clp_rect->width < 1 || clp_rect->height < 1) {
-                printf("dst_rect = %d,%d,%d,%d   roi = %d,%d,%d,%d\n",
-                    dst_rect->x, dst_rect->y, dst_rect->width, dst_rect->height,
-                    roi->x, roi->y, roi->width, roi->height);
-                continue;
-            }
-
-            gegl_buffer_copy(buftmp, gclp_rect, GEGL_ABYSS_WHITE, output, clp_rect);
-        }
-    }
-
-    g_free(src_buf);
-    g_free(dst_buf);
-    g_free(vix_rgb);
-    g_free(scratch);
-    g_free(src_rect);
-    g_free(dst_rect);
-    g_free(clp_rect);
-    g_free(grid_rect);
-    g_free(gclp_rect);
-    g_object_unref(buftmp);
-
-    return TRUE;
+static void
+dispose (GObject *object)
+{
+   GeglProperties  *o = GEGL_PROPERTIES (object);
+   g_clear_pointer (&o->user_data, g_free);
+   G_OBJECT_CLASS (gegl_op_parent_class)->dispose (object);
 }
 
 static void
 gegl_op_class_init (GeglOpClass *klass)
 {
-    GeglOperationClass       *operation_class;
-    GeglOperationFilterClass *filter_class;
+    GObjectClass           *object_class         = G_OBJECT_CLASS (klass); 
+    GeglOperationClass     *operation_class      = GEGL_OPERATION_CLASS (klass);
+    GeglOperationMetaClass *operation_meta_class = GEGL_OPERATION_META_CLASS (klass);
 
-    operation_class = GEGL_OPERATION_CLASS (klass);
-    filter_class    = GEGL_OPERATION_FILTER_CLASS (klass);
-
-    operation_class->prepare = prepare;
-    filter_class->process    = process;
+    operation_class->threaded    = FALSE;
+    operation_class->attach      = attach;
+    operation_meta_class->update = update;
+    object_class->dispose        = dispose; 
 
     gegl_operation_class_set_keys (operation_class,
         "name",             "kruthers:video-pixelize",
