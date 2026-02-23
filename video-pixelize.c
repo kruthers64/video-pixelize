@@ -30,28 +30,15 @@
 
 #include "video-pixelize-gegl-enum.h"
 
-enum_start (gegl_video_pixelize_style)
-    enum_value (GEGL_VIDEO_PIXELIZE_STYLE_RGB, "rgb",
-        N_("RGB phosphor style"))
-    enum_value (GEGL_VIDEO_PIXELIZE_STYLE_FULL, "full-color",
-        N_("Full color"))
-enum_end (GeglVideoPixelizeStyle)
-
-property_enum (style, _("Color style"), GeglVideoPixelizeStyle,
-    gegl_video_pixelize_style, GEGL_VIDEO_PIXELIZE_STYLE_RGB)
-description (_("Method of coloring individual video pixels"))
+property_double (color_style, _("Color style:  RGB phosphors <-> Full color"), 0.0)
+    description(_("Adjust video pixels to be colored from phosophor-style RGB to full color."))
+    value_range (0.0, 1.0)
+    ui_range    (0.0, 1.0)
 
 property_boolean (clear_bg, _("Transparent backround pixels"), FALSE)
 description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B. "
     "They are usually drawn black or white depending on the style; this toggles them to be clear."
 ))
-
-property_double (brightness, _("Compensate brightness"), 0.0)
-    description(_("Adjust colors to approximate brightness of the original image (only for RGB phosphor style)."))
-    value_range (0.0, 2.0)
-    ui_range    (0.0, 1.0)
-    ui_meta     ("visible", " ! style {full-color}")
-    ui_meta     ("unit", "luminance")
 
 property_boolean (rotate, _("Rotate"), FALSE)
 description(_("Rotate the pattern by ninety degrees."))
@@ -152,30 +139,11 @@ get_vixel_colors(
             vix_rgb[vix * 4 + c] /= scratch[vix];
         }
 
-        // RGB phosphor style
-        if (o->style == 0) {
-            if (o->brightness > 0.0) {
-                if (channel == 1) {
-                    lum = (vix_rgb[vix * 4 + 1] * GLUM + vix_rgb[vix * 4 + 2] * BLUM) * o->brightness;
-                    vix_rgb[vix * 4    ] += lum;
-                    vix_rgb[vix * 4 + 1] = lum;
-                    vix_rgb[vix * 4 + 2] = lum;
-                } else if (channel == 2) {
-                    lum = (vix_rgb[vix * 4    ] * RLUM + vix_rgb[vix * 4 + 2] * BLUM) * o->brightness;
-                    vix_rgb[vix * 4    ] = lum;
-                    vix_rgb[vix * 4 + 1] += lum;
-                    vix_rgb[vix * 4 + 2] = lum;
-                } else {
-                    lum = (vix_rgb[vix * 4    ] * RLUM + vix_rgb[vix * 4 + 1] * GLUM) * o->brightness;
-                    vix_rgb[vix * 4    ] = lum;
-                    vix_rgb[vix * 4 + 1] = lum;
-                    vix_rgb[vix * 4 + 2] += lum;
-                }
-            } else {
-                for (c = 0 ; c < 3 ; c++) {
-                    if (channel - 1 != c) {
-                        vix_rgb[vix * 4 + c] = 0.0;
-                    }
+        // dial in RGB phosphor style depending on slider
+        if (o->color_style < 1.0) {
+            for (c = 0 ; c < 3 ; c++) {
+                if (channel - 1 != c) {
+                    vix_rgb[vix * 4 + c] *= o->color_style;
                 }
             }
         }
