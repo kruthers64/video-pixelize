@@ -1,5 +1,3 @@
-#include "stdio.h"
-
 /* This file is an image processing operation for GEGL
  *
  * This program is free software: you can redistribute it and/or modify
@@ -70,10 +68,12 @@ prepare (GeglOperation *operation)
     GeglOperationAreaFilter *op_area;
     op_area = GEGL_OPERATION_AREA_FILTER (operation);
 
-    op_area->left   =
-    op_area->right  = 25; //  TODO: FIGURE OUT IF PADDING IS NECESSARY
-    op_area->top    =
-    op_area->bottom = 25;
+    // this needs to be some non-zero amount or we get artifacting when scaling up
+    // TODO: determine if the amount needed here depends on the pattern size
+    op_area->left   = 
+    op_area->right  = 10;
+    op_area->top    = 
+    op_area->bottom = 10;
 
     gegl_operation_set_format (operation, "input", format);
     gegl_operation_set_format (operation, "output", format);
@@ -258,11 +258,8 @@ process (GeglOperation       *operation,
 static void
 gegl_op_class_init (GeglOpClass *klass)
 {
-    GeglOperationClass       *operation_class;
-    GeglOperationFilterClass *filter_class;
-
-    operation_class = GEGL_OPERATION_CLASS (klass);
-    filter_class    = GEGL_OPERATION_FILTER_CLASS (klass);
+    GeglOperationClass           *operation_class = GEGL_OPERATION_CLASS (klass);
+    GeglOperationFilterClass     *filter_class    = GEGL_OPERATION_FILTER_CLASS (klass);
 
     operation_class->prepare = prepare;
     filter_class->process    = process;
