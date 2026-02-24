@@ -275,7 +275,17 @@ sub grid_dimensions {
         }
     }
 
-    return $best_ll->[0], $best_ll->[1], $best_ur->[0] - $best_ll->[0] + 1, $best_ur->[1] - $best_ll->[1] + 1; 
+    my $x = $best_ll->[0];
+    my $y = $best_ll->[1];
+    my $w = $best_ur->[0] - $best_ll->[0] + 1;
+    my $h = $best_ur->[1] - $best_ll->[1] + 1;
+
+    # ugly hack: algorithm seems to fail if answer is full rectangle, so detect and override
+    if ($w == 0 or $h == 0) {
+        return 0, 0, $vw, $vh;
+    } else {
+        return $x, $y, $w, $h;
+    }
 }
 
 
