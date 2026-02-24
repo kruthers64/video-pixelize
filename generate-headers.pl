@@ -37,16 +37,9 @@ main();
 exit();
 
 sub main {
-    open(my $pfh, ">", $HEADER_PATTERNS) or error("Cannot open '$HEADER_PATTERNS' for writing");
-    open(my $gfh, ">", $HEADER_GEGL_ENUM) or error("Cannot open '$HEADER_GEGL_ENUM' for writing");
-    open(my $cfh, ">", $HEADER_GEGL_ENUM_CORE) or error("Cannot open '$HEADER_GEGL_ENUM_CORE' for writing");
-    write_preamble($pfh);
-    write_preamble($gfh);
-    write_preamble($cfh);
-
     my @files = glob "$PATTERN_DIR/*.xpm";
     my $patterns = [];
-    my ($gegl_enum_text, $gegl_enum_text_core) = ("", "");
+    my ($pattern_text, $gegl_enum_text, $gegl_enum_text_core) = ("", "", "");
     foreach my $filename (@files) {
         my $pattern = (split(m#[/\.]#, $filename))[1];
         push(@$patterns, $pattern);
@@ -55,10 +48,20 @@ sub main {
         my ($xpm_dims, $palette, $pixels) = parse_xpm($pattern, $xpm);
         my ($vixmap, $colmap, $dims) = get_pattern_data($pattern, $xpm_dims, $palette, $pixels);
 
-        write_pattern_data($pfh, $pattern, $vixmap, $colmap, $dims);
+        $pattern_text        .= generate_pattern_data($pattern, $vixmap, $colmap, $dims);
         $gegl_enum_text      .= generate_gegl_enum_text($pattern, $GEGL_ENUM_PREFIX);
         $gegl_enum_text_core .= generate_gegl_enum_text($pattern, $GEGL_ENUM_PREFIX_CORE);
     }
+
+    # write files
+    open(my $pfh, ">", $HEADER_PATTERNS) or error("Cannot open '$HEADER_PATTERNS' for writing");
+    open(my $gfh, ">", $HEADER_GEGL_ENUM) or error("Cannot open '$HEADER_GEGL_ENUM' for writing");
+    open(my $cfh, ">", $HEADER_GEGL_ENUM_CORE) or error("Cannot open '$HEADER_GEGL_ENUM_CORE' for writing");
+
+    write_preamble($pfh);
+    write_preamble($gfh);
+    write_preamble($cfh);
+    print($pfh $pattern_text);
     write_patterns_array($pfh, $patterns);
     write_gegl_enum_file($gfh, $patterns, $gegl_enum_text,      $GEGL_ENUM_TEMPLATE,      $GEGL_ENUM_PREFIX);
     write_gegl_enum_file($cfh, $patterns, $gegl_enum_text_core, $GEGL_ENUM_TEMPLATE_CORE, $GEGL_ENUM_PREFIX_CORE);
@@ -290,48 +293,52 @@ sub write_preamble {
 }
 
 
-sub write_pattern_data {
-    my ($fh, $pattern, $vixmap, $colmap, $dims) = @_;
+sub generate_pattern_data {
+    my ($pattern, $vixmap, $colmap, $dims) = @_;
 
     my $identifier = get_c_identifier($pattern);
     my ($vw, $vh) = ($dims->{'vw'}, $dims->{'vh'});
 
-    print($fh "gint ${identifier}_vixmap[${vw}*${vh}] = {\n");
+    my $text = "";
+
+    $text .= "gint ${identifier}_vixmap[${vw}*${vh}] = {\n";
     for (my $idx = 0 ; $idx < scalar(@$vixmap) ; $idx++) {
         if ($idx % $vw == 0) {
-            print($fh "   ");
+            $text .= "   ";
         }
-        printf($fh " %3d,", $vixmap->[$idx]);
+        $text .= sprintf(" %3d,", $vixmap->[$idx]);
         if (($idx + 1) % $vw == 0) {
-            print($fh "\n");
+            $text .= "\n";
         }
     };
-    print($fh "};\n");
+    $text .= "};\n";
 
-    print($fh "gint ${identifier}_colmap[" . $dims->{'vixn'} . "] = {\n");
+    $text .= "gint ${identifier}_colmap[" . $dims->{'vixn'} . "] = {\n";
     for (my $idx = 0 ; $idx < scalar(@$colmap) ; $idx++) {
         if ($idx % 10 == 0) {
-            print($fh "   ");
+            $text .= "   ";
         }
-        printf($fh " %3d,", $colmap->[$idx]);
+        $text .= sprintf(" %3d,", $colmap->[$idx]);
         if (($idx + 1) % 10 == 0 or $idx == scalar(@$colmap) - 1) {
-            print($fh "\n");
+            $text .= "\n";
         }
     }
-    print($fh "};\n");
-    print($fh "Pattern ${identifier} = {\n");
-    print($fh "    ");
-    print($fh $dims->{'gx'} . ", ");
-    print($fh $dims->{'gy'} . ", ");
-    print($fh $dims->{'gw'} . ", ");
-    print($fh $dims->{'gh'} . ", ");
-    print($fh $dims->{'vixn'} . ", ");
-    print($fh "${identifier}_vixmap, ");
-    print($fh $dims->{'vw'} . ", ");
-    print($fh $dims->{'vh'} . ", ");
-    print($fh "${identifier}_colmap\n");
-    print($fh "};\n");
-    print($fh "\n");
+    $text .= "};\n";
+    $text .= "Pattern ${identifier} = {\n";
+    $text .= "    ";
+    $text .= $dims->{'gx'} . ", ";
+    $text .= $dims->{'gy'} . ", ";
+    $text .= $dims->{'gw'} . ", ";
+    $text .= $dims->{'gh'} . ", ";
+    $text .= $dims->{'vixn'} . ", ";
+    $text .= "${identifier}_vixmap, ";
+    $text .= $dims->{'vw'} . ", ";
+    $text .= $dims->{'vh'} . ", ";
+    $text .= "${identifier}_colmap\n";
+    $text .= "};\n";
+    $text .= "\n";
+
+    return $text;
 }
 
 
