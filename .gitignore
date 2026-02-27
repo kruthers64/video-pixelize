@@ -9,3 +9,4 @@ out/
 video-pixelize-core-gegl-enum.h
 video-pixelize-gegl-enum.h
 video-pixelize-patterns.h
+misc/maxrect

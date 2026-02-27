@@ -231,45 +231,45 @@ sub grid_dimensions {
     my $stack = [];
 
     my $lookup = sub {
-        my ($x, $y) = @_;
-        my $idx = $y * $vw + $x;
+        my ($n, $m) = @_;
+        my $idx = $m * $vw + $n;
         return $vixmap->[$idx] != -1;
     };
 
     my $update_cache = sub {
-        my ($x) = @_;
-        for (my $y = 0 ; $y < $vh ; $y++) {
-            if ($lookup->($x, $y)) {
-                $c->[$y]++;
+        my ($n) = @_;
+        for (my $m = 0 ; $m < $vh ; $m++) {
+            if ($lookup->($n, $m)) {
+                $c->[$m]++;
             } else {
-                $c->[$y] = 0;
+                $c->[$m] = 0;
             }
         }
     };
 
-    for (my $x = $vw-1 ; $x >= 0 ; $x--) {
-        $update_cache->($x);
-        my $width = 0;
-        for (my $y = 0 ; $y < $vh ; $y++) {
-            if ($c->[$y] > $width) {
-                push(@$stack, [$y, $width]);
-                $width = $c->[$y];
+    for (my $n = $vw-1 ; $n >= 0 ; $n--) {
+        $update_cache->($n);
+        my $open_width = 0;
+        for (my $m = 0 ; $m <= $vh ; $m++) {
+            if ($c->[$m] > $open_width) {
+                push(@$stack, [$m, $open_width]);
+                $open_width = $c->[$m];
             }
-            if ($c->[$y] < $width) {
+            if ($c->[$m] < $open_width) {
                 my ($y0, $w0);
                 do {
                     ($y0, $w0) = @{pop(@$stack)};
-                    my $area = $width * ($y - $y0);
+                    my $area = $open_width * ($m - $y0);
                     if ($area > $best_area) {
                         $best_area = $area;
-                        $best_ll = [$x, $y0];
-                        $best_ur = [$x + $width - 1, $y - 1];
+                        $best_ll = [$n, $y0];
+                        $best_ur = [$n + $open_width - 1, $m - 1];
                     }
-                    $width = $w0;
-                } while ($c->[$y] < $width);
-                $width = $c->[$y];
-                if ($width != 0) {
-                    push(@$stack, [$y0, $width]);
+                    $open_width = $w0;
+                } while ($c->[$m] < $open_width);
+                $open_width = $c->[$m];
+                if ($open_width != 0) {
+                    push(@$stack, [$y0, $w0]);
                 }
             }
         }
@@ -280,12 +280,7 @@ sub grid_dimensions {
     my $w = $best_ur->[0] - $best_ll->[0] + 1;
     my $h = $best_ur->[1] - $best_ll->[1] + 1;
 
-    # ugly hack: algorithm seems to fail if answer is full rectangle, so detect and override
-    if ($w == 0 or $h == 0) {
-        return 0, 0, $vw, $vh;
-    } else {
-        return $x, $y, $w, $h;
-    }
+    return $x, $y, $w, $h;
 }
 
 

@@ -37,13 +37,19 @@ int M, N; /* Dimension of input; M is length of a row. */
 void update_cache() {
   int m;
   char b;
+  printf("update cache\n");
   for (m = 0; m!=M; ++m) {
     scanf(" %c", &b);
     fprintf(stderr, " %c", b);
     if (b=='0') {
+      printf("0");
       c[m] = 0;
-    } else { ++c[m]; }
+    } else {
+      printf("+");
+      ++c[m];
+    }
   }
+  printf("\n");
   fprintf(stderr, "\n");
 }
 
@@ -67,6 +73,7 @@ int main() {
       if (c[m]<open_width) { /* Close rectangle(s)? */
         int m0, w0, area;
         do {
+          printf("top: %d\n", top);
           pop(&m0, &w0);
           area = open_width*(m-m0);
           if (area>best_area) {
