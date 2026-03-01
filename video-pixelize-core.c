@@ -71,9 +71,9 @@ prepare (GeglOperation *operation)
     // this needs to be some non-zero amount or we get artifacting when scaling up
     // TODO: determine if the amount needed here depends on the pattern size
     op_area->left   = 
-    op_area->right  = 10;
+    op_area->right  = 100;
     op_area->top    = 
-    op_area->bottom = 10;
+    op_area->bottom = 100;
 
     gegl_operation_set_format (operation, "input", format);
     gegl_operation_set_format (operation, "output", format);
@@ -263,6 +263,7 @@ gegl_op_class_init (GeglOpClass *klass)
 
     operation_class->prepare = prepare;
     filter_class->process    = process;
+    operation_class->threaded         = FALSE;
 
     gegl_operation_class_set_keys (operation_class,
         "name",             "kruthers:video-pixelize-core",

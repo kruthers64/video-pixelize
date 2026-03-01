@@ -73,8 +73,6 @@ typedef struct
     GeglNode *output;
 } Nodes;
 
-#define FLOOR_POS(X) ((X-(int)(X)) > 0 ? (int)(X-1) : (int)(X))
-
 static void
 update (GeglOperation *operation)
 {
@@ -84,41 +82,19 @@ update (GeglOperation *operation)
     if (!nodes)
         return;
 
-    GeglRectangle inrect = gegl_node_get_bounding_box(nodes->input);
-    gfloat x0, y0, x, y, xc, yc;
+    gfloat scale_inv = 1.0 / o->scale;
+    gegl_node_set (nodes->prescale,  "x", scale_inv, "y", scale_inv, NULL);
+    gegl_node_set (nodes->postscale, "x", o->scale,  "y", o->scale,  NULL);
 
-    // for some unknown reason we can't get inrect on first draw, and thus we can't set scaling & cropping
-    // parameters to proper starting defaults; so disable these nodes until we can get our input size
-    if (inrect.width == 0 || inrect.height == 0) {
-        gegl_node_set_passthrough(nodes->prescale, TRUE);
-        gegl_node_set_passthrough(nodes->postcrop, TRUE);
-        gegl_node_set_passthrough(nodes->postscale, TRUE);
-
+    if (o->rotate) {
+        gegl_node_set (nodes->prerot,  "degrees", -90.0, NULL);
+        gegl_node_set (nodes->postrot, "degrees",  90.0, NULL);
     } else {
-        gegl_node_set_passthrough(nodes->prescale, FALSE);
-        gegl_node_set_passthrough(nodes->postcrop, FALSE);
-        gegl_node_set_passthrough(nodes->postscale, FALSE);
-
-        x0 = inrect.width;
-        y0 = inrect.height;
-        x = x0 / o->scale;
-        y = y0 / o->scale;
-        xc = FLOOR_POS(x);
-        yc = FLOOR_POS(y);
-
-        gegl_node_set (nodes->prescale,  "x", x,  "y", y, NULL);
-        gegl_node_set (nodes->postcrop,  "x", 0.0, "y", 0.0, "width", xc, "height", yc, NULL);
-        gegl_node_set (nodes->postscale, "x", x0, "y", y0, NULL);
-
-        if (o->rotate) {
-            gegl_node_set (nodes->prerot,  "degrees", -90.0, NULL);
-            gegl_node_set (nodes->postrot, "degrees",  90.0, NULL);
-        } else {
-            gegl_node_set (nodes->prerot,  "degrees",   0.0, NULL);
-            gegl_node_set (nodes->postrot, "degrees",   0.0, NULL);
-        }
+        gegl_node_set (nodes->prerot,  "degrees",   0.0, NULL);
+        gegl_node_set (nodes->postrot, "degrees",   0.0, NULL);
     }
 }
+
 
 static void
 attach (GeglOperation *operation)
@@ -132,18 +108,34 @@ attach (GeglOperation *operation)
     nodes->input  = gegl_node_get_input_proxy (gegl, "input");
     nodes->output = gegl_node_get_output_proxy (gegl, "output");
 
-    nodes->prescale  = gegl_node_new_child (gegl, "operation", "gegl:scale-size", NULL);
-    nodes->prerot    = gegl_node_new_child (gegl, "operation", "gegl:rotate", NULL);
-    nodes->videopix  = gegl_node_new_child (gegl, "operation", "kruthers:video-pixelize-core", NULL);
-    nodes->postrot   = gegl_node_new_child (gegl, "operation", "gegl:rotate", NULL);
-    nodes->postcrop  = gegl_node_new_child (gegl, "operation", "gegl:crop", NULL);
-    nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-size", NULL);
+    nodes->prescale  = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio",
+        "x", 1.0, "y", 1.0,
+        "abyss-policy", GEGL_ABYSS_CLAMP,
+        "sampler", GEGL_SAMPLER_NEAREST,
+        NULL
+    );
+    nodes->prerot    = gegl_node_new_child (gegl, "operation", "gegl:rotate",
+        "degrees", 0.0,
+        "sampler", GEGL_SAMPLER_NEAREST,
+        NULL
+    );
 
-    gegl_node_set (nodes->prescale,  "abyss-policy", GEGL_ABYSS_CLAMP, NULL);
-    gegl_node_set (nodes->postscale, "abyss-policy", GEGL_ABYSS_CLAMP, NULL);
-    gegl_node_set (nodes->prescale,  "sampler", GEGL_SAMPLER_NEAREST, NULL);
-    gegl_node_set (nodes->prerot,    "sampler", GEGL_SAMPLER_NEAREST, NULL);
-    gegl_node_set (nodes->postrot,   "sampler", GEGL_SAMPLER_NEAREST, NULL);
+    nodes->videopix  = gegl_node_new_child (gegl, "operation", "kruthers:video-pixelize-core", NULL);
+
+    nodes->postrot   = gegl_node_new_child (gegl, "operation", "gegl:rotate",
+        "degrees", 0.0,
+        "sampler", GEGL_SAMPLER_NEAREST,
+        NULL
+    );
+    nodes->postcrop  = gegl_node_new_child (gegl, "operation", "gegl:crop", NULL);
+    nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio",
+        "x", 1.0, "y", 1.0,
+        "abyss-policy", GEGL_ABYSS_CLAMP,
+        "sampler", GEGL_SAMPLER_NEAREST,
+        NULL
+    );
+
+    gegl_node_connect(nodes->input, "output", nodes->postcrop, "aux");
 
     gegl_node_link_many (
         nodes->input,
@@ -160,7 +152,6 @@ attach (GeglOperation *operation)
     gegl_operation_meta_redirect (operation, "pattern",      nodes->videopix,  "pattern");
     gegl_operation_meta_redirect (operation, "color-style",  nodes->videopix,  "color-style");
     gegl_operation_meta_redirect (operation, "clear-bg",     nodes->videopix,  "clear-bg");
-
     gegl_operation_meta_redirect (operation, "sampler-type", nodes->postscale, "sampler");
 }
 

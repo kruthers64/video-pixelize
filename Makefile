@@ -2,6 +2,7 @@ TEST_IMAGE := test02.png
 RUN_IMAGE := test02-pink.xcf
 NAME := video-pixelize
 CORE := video-pixelize-core
+KRTEST01 := krtest01
 HEADERS := video-pixelize-gegl-enum.h video-pixelize-patterns.h
 INSTALL_DIR := $(HOME)/.local/share/gegl-0.4/plug-ins
 TEST_DIR := test-images
@@ -10,9 +11,9 @@ TEST_OUT := out
 
 .PHONY: all test clean view run
 
-CFLAGS := -shared -Werror
+CFLAGS := -g -shared -Werror
 
-all: $(CORE).so $(NAME).so
+all: $(CORE).so $(NAME).so $(KRTEST01).so
 
 $(HEADERS) : generate-headers.pl patterns/*.xpm
 	./generate-headers.pl
@@ -25,6 +26,10 @@ $(NAME).so: $(CORE).so $(NAME).c config.h $(HEADERS)
 	gcc $(CFLAGS) $(NAME).c `pkg-config --cflags --libs gegl-0.4` -I. -fpic -o $(NAME).so
 	cp -pv $(NAME).so $(INSTALL_DIR)
 
+$(KRTEST01).so: $(KRTEST01).c config.h
+	gcc $(CFLAGS) $(KRTEST01).c `pkg-config --cflags --libs gegl-0.4` -I. -fpic -o $(KRTEST01).so
+	cp -pv $(KRTEST01).so $(INSTALL_DIR)
+
 test: all
 	@for f in $(TEST_IN) ; do \
 	    b=$$(basename $$f) ; \
@@ -34,11 +39,11 @@ test: all
 	    echo make $(TEST_OUT)/$$b-b.png ; \
 	    gegl $$f -o $(TEST_OUT)/$$b-b.png -- kruthers:$(NAME) ; \
 	    echo make $(TEST_OUT)/$$b-c.png ; \
-	    gegl $$f -o $(TEST_OUT)/$$b-c.png -- kruthers:$(NAME) scale=17.23 ; \
+	    gegl $$f -o $(TEST_OUT)/$$b-c.png -- kruthers:$(NAME) pattern=plus-3x3 sampler-type=cubic scale=2.29 ; \
 	done
 
 clean:
-	rm -vf *.so $(TEST_OUT)/* $(HEADERS)
+	rm -vf *.so $(TEST_OUT)/* $(HEADERS) $(INSTALL_DIR)/*.so
 
 view:
 	qimgv $(TEST_OUT) >> /dev/null 2>&1 &
