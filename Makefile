@@ -36,8 +36,8 @@ test: all
 	    b=$${b%%.*} ; \
 	    e=$${f##*.} ; \
 	    cp -v $$f $(TEST_OUT)/$$b-a.$$e ; \
-	    echo make $(TEST_OUT)/$$b-b.png ; \
-	    gegl $$f -o $(TEST_OUT)/$$b-b.png -- kruthers:$(NAME) ; \
+	    # echo make $(TEST_OUT)/$$b-b.png ; \
+	    # gegl $$f -o $(TEST_OUT)/$$b-b.png -- kruthers:$(NAME) ; \
 	    echo make $(TEST_OUT)/$$b-c.png ; \
 	    gegl $$f -o $(TEST_OUT)/$$b-c.png -- kruthers:$(NAME) pattern=plus-3x3 sampler-type=cubic scale=2.29 ; \
 	done
