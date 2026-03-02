@@ -74,53 +74,20 @@ typedef struct
 } Nodes;
 
 
-#include "stdio.h"
-#define FLOOR_POS(X) ((X-(int)(X)) > 0 ? (int)(X-1) : (int)(X))
-
 static void
 update (GeglOperation *operation)
 {
     static gfloat cache_width  = 0;
     static gfloat cache_height = 0;
-printf("    UPDATE\n");
     GeglProperties *o     = GEGL_PROPERTIES (operation);
     Nodes          *nodes = o->user_data;
-
-    gfloat x0, y0, x, y, xc, yc;
 
     if (!nodes)
         return;
 
-    GeglRectangle inrect = gegl_node_get_bounding_box(nodes->input);
-    if (inrect.width != 0 && inrect.height != 0) {
-        x0 = inrect.width;
-        y0 = inrect.height;
-        cache_width = x0;
-        cache_height = y0;
-        printf("      dims: %3.2f, %3.2f\n", x0, y0);
-    } else if (cache_width != 0 && cache_height != 0) {
-        x0 = cache_width;
-        y0 = cache_height;
-        printf("      cached dims: %3.2f, %3.2f\n", x0, y0);
-    } else {
-        printf("      no dims\n");
-        return;
-    }
-
-
-//    gfloat scale_inv = 1.0 / o->scale;
-//    gegl_node_set (nodes->prescale,  "x", scale_inv, "y", scale_inv, NULL);
-//    gegl_node_set (nodes->postscale, "x", o->scale,  "y", o->scale,  NULL);
-
-    x = x0 / o->scale;
-    y = y0 / o->scale;
-    xc = FLOOR_POS(x);
-    yc = FLOOR_POS(y);
-printf("      dims: %3.2f, %3.2f\n", x0, y0);
-
-    gegl_node_set (nodes->prescale,  "x", x,  "y", y, NULL);
-    gegl_node_set (nodes->postcrop,  "x", 0.0, "y", 0.0, "width", xc, "height", yc, NULL);
-    gegl_node_set (nodes->postscale, "x", x0, "y", y0, NULL);
+    gfloat scale_inv = 1.0 / o->scale;
+    gegl_node_set (nodes->prescale,  "x", scale_inv, "y", scale_inv, NULL);
+    gegl_node_set (nodes->postscale, "x", o->scale,  "y", o->scale,  NULL);
 
     if (o->rotate) {
         gegl_node_set (nodes->prerot,  "degrees", -90.0, NULL);
@@ -135,7 +102,6 @@ printf("      dims: %3.2f, %3.2f\n", x0, y0);
 static void
 attach (GeglOperation *operation)
 {
-printf("ATTACH\n");
     GeglProperties  *o     = GEGL_PROPERTIES (operation);
     GeglNode        *gegl  = operation->node;
 
@@ -145,7 +111,7 @@ printf("ATTACH\n");
     nodes->input  = gegl_node_get_input_proxy (gegl, "input");
     nodes->output = gegl_node_get_output_proxy (gegl, "output");
 
-    nodes->prescale  = gegl_node_new_child (gegl, "operation", "gegl:scale-size",
+    nodes->prescale  = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio",
         "x", 1.0, "y", 1.0,
         "abyss-policy", GEGL_ABYSS_CLAMP,
         "sampler", GEGL_SAMPLER_NEAREST,
@@ -165,14 +131,15 @@ printf("ATTACH\n");
         NULL
     );
     nodes->postcrop  = gegl_node_new_child (gegl, "operation", "gegl:crop", NULL);
-    nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-size",
+    nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio",
         "x", 1.0, "y", 1.0,
         "abyss-policy", GEGL_ABYSS_CLAMP,
         "sampler", GEGL_SAMPLER_NEAREST,
         NULL
     );
 
-    gegl_node_connect(nodes->input, "output", nodes->postcrop, "aux");
+    // before scaling back up, we crop to remove the extra padding added by video-pixelie-core
+    gegl_node_connect(nodes->prescale, "output", nodes->postcrop, "aux");
 
     gegl_node_link_many (
         nodes->input,
@@ -198,7 +165,6 @@ prepare (GeglOperation *operation)
     static gboolean initialized = FALSE;
 
     if (! initialized) {
-printf("  PREPARE\n");
         GeglNode       *gegl = operation->node;
         GeglRectangle   inrect;
         GeglNode       *input;
@@ -230,7 +196,7 @@ gegl_op_class_init (GeglOpClass *klass)
 
     operation_class->threaded    = FALSE;
     operation_class->attach      = attach;
-    operation_class->prepare     = prepare;
+//    operation_class->prepare     = prepare;
     operation_meta_class->update = update;
     object_class->dispose        = dispose; 
 
