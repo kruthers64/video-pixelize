@@ -9,6 +9,7 @@ my $HEADER_PATTERNS = "video-pixelize-patterns.h";
 my $HEADER_GEGL_ENUM = "video-pixelize-gegl-enum.h";
 my $HEADER_GEGL_ENUM_CORE = "video-pixelize-core-gegl-enum.h";
 my $PATTERN_DIR = "patterns";
+my $GRID_SUFFIX = "GRID";
 my $GEGL_ENUM_PREFIX = "GEGL_VIDEO_PIXELIZE_TYPE";
 my $GEGL_ENUM_PREFIX_CORE = "GEGL_VIDEO_PIXELIZE_CORE_TYPE";
 my $GEGL_ENUM_TEMPLATE = '
@@ -41,12 +42,27 @@ sub main {
     my $patterns = [];
     my ($pattern_text, $gegl_enum_text, $gegl_enum_text_core) = ("", "", "");
     foreach my $filename (@files) {
+        # GRID files augment patterns; don't treat them as regular patterns themselves
+        if ($filename =~ m/$GRID_SUFFIX.xpm/) {
+            next;
+        }
         my $pattern = (split(m#[/\.]#, $filename))[1];
         push(@$patterns, $pattern);
         my $xpm = load_xpm($filename);
 
         my ($xpm_dims, $palette, $pixels) = parse_xpm($pattern, $xpm);
         my ($vixmap, $colmap, $dims) = get_pattern_data($pattern, $xpm_dims, $palette, $pixels);
+
+        # look for matching GRID file to correct grid dimensions
+        my $grid_filename = "$PATTERN_DIR/$pattern-$GRID_SUFFIX.xpm";
+        if (-e $grid_filename) {
+            my $grid_name = (split(m#[/\.]#, $filename))[1];
+            my $grid_xpm = load_xpm($grid_filename);
+            my ($grid_xpm_dims, $grid_palette, $grid_pixels) = parse_xpm($grid_name, $grid_xpm);
+            my ($grid_vixmap, $grid_colmap, $grid_dims) = get_pattern_data($grid_name, $grid_xpm_dims, $grid_palette, $grid_pixels);
+            $dims->{'gw'} = $grid_dims->{'gw'};
+            $dims->{'gh'} = $grid_dims->{'gh'};
+        }
 
         $pattern_text        .= generate_pattern_data($pattern, $vixmap, $colmap, $dims);
         $gegl_enum_text      .= generate_gegl_enum_text($pattern, $GEGL_ENUM_PREFIX);
