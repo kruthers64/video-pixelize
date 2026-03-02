@@ -47,6 +47,7 @@ sub main {
             next;
         }
         my $pattern = (split(m#[/\.]#, $filename))[1];
+        $pattern =~ s/^\d+-//;
         push(@$patterns, $pattern);
         my $xpm = load_xpm($filename);
 
