@@ -160,35 +160,143 @@ align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin)
     return roi_offset - ((roi_offset - world_origin) % grid_size);
 }
 
+// ---- pattern helper routines -----------------------------------------------------------------------
+
+/*
+static Pattern *
+new_pattern(gint w, gint h) {
+    gint *vixmap = (gint *) g_malloc0 (sizeof(gint) * w * h);
+    Pattern *pat = g_malloc (sizeof (Pattern));
+    pat->vixmap = vixmap;
+    return pat;
+}
+
+static Pattern *
+free_pattern(Pattern *pat) {
+    g_free(pat->vixmap);
+    g_free(pat);
+}
+*/
+
+// A B C D  xpose  A E I   flipH   I E A
+// E F G H         B F J           J F B
+// I J K L         C G K           K G C
+//                 D H L           L H D
+
+static void
+pat_transpose(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
+    for (gint y = 0 ; y < pat->vh ; y++)
+        for (gint x = 0 ; x < pat->vw ; x++)
+            vixmap_out[ x * pat->vh + y ] = vixmap_in[ y * pat->vw + x ];
+}
+
+// A:   0,0     ->      2,0
+// idx: 0       ->      2
+//      0*3
+
+static void
+pat_flip_h(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
+    for (gint y = 0 ; y < pat->vh ; y++)
+        for (gint x = 0 ; x < pat->vw ; x++)
+            vixmap_out[ y * pat->vw + pat->vw - 1 - x ] = vixmap_in[ y * pat->vw + x ];
+}
+
+static void
+pat_copy(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
+    gint len = pat->vw * pat->vh;
+    for (gint i = 0 ; i < len ; i++)
+        vixmap_out[ i ] = pat->vixmap[ i ];
+}
+
+static void
+pat_reverse(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
+    gint len = pat->vw * pat->vh;
+    for (gint i = 0 ; i < len ; i++)
+        vixmap_out[ len - 1 - i ] = pat->vixmap[ i ];
+}
+
 //  Flip & rotate the pattern to get 4 directions:
 //    0 = no change
 //    1 = flip
-//    2 = flip & rotate
-//    3 = rotate
+//    2 = rotate
+//    3 = flip & rotate
 static Pattern *
 pattern_set_direction (
     Pattern *in_pat,
     gint direction
 ) {
-printf("pattern_set_direction\n");
-    Pattern *out_pat = g_malloc (sizeof (Pattern));
+//printf("pattern_set_direction\n");
     gint *vixmap = (gint *) g_malloc (sizeof(gint) * in_pat->vw * in_pat->vh);
-    out_pat->vixmap = vixmap;
+    gint *scratch = (gint *) g_malloc (sizeof(gint) * in_pat->vw * in_pat->vh);
 
-    gboolean flp = (direction == 1 || direction == 2) ? TRUE : FALSE;
-    gboolean rot = (direction == 2 || direction == 3) ? TRUE : FALSE;
+    Pattern *out_pat = g_malloc (sizeof (Pattern));
+    out_pat->vixmap = vixmap;
 
     // never change
     out_pat->colmap = in_pat->colmap;
     out_pat->vixn   = in_pat->vixn;
 
-    // rotate swaps width/height
-    out_pat->gw = rot ? in_pat->gh : in_pat->gw;
-    out_pat->gh = rot ? in_pat->gw : in_pat->gh;
-    out_pat->vw = rot ? in_pat->vh : in_pat->vw;
-    out_pat->vh = rot ? in_pat->vw : in_pat->vh;
+//    gboolean flp = (direction == 1 || direction == 3) ? TRUE : FALSE;
+//    gboolean rot = (direction == 2 || direction == 3) ? TRUE : FALSE;
+    gint rot = direction % 4;
 
-    // reorder the vixel array
+    // rotate 90 & 270 swaps width/height
+    out_pat->gw = (rot == 1 || rot == 3) ? in_pat->gh : in_pat->gw;
+    out_pat->gh = (rot == 1 || rot == 3) ? in_pat->gw : in_pat->gh;
+    out_pat->vw = (rot == 1 || rot == 3) ? in_pat->vh : in_pat->vw;
+    out_pat->vh = (rot == 1 || rot == 3) ? in_pat->vw : in_pat->vh;
+
+    if (rot == 0) {
+        pat_copy(in_pat, in_pat->vixmap, vixmap);
+        out_pat->gx = in_pat->gx;
+        out_pat->gy = in_pat->gy;
+
+    // 90 deg
+    } else if (rot == 1) {
+        pat_transpose(in_pat, in_pat->vixmap, scratch);
+        pat_flip_h(in_pat, scratch, vixmap);
+        // gx=0 gy=2 gw=6 gh=12 vw=6 vh=16
+        // x: 16 - 2 - 12 = 2
+        // y: 0
+        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
+        out_pat->gy = in_pat->gx;
+
+    // 180 degrees
+    } else if (rot == 2) {
+        pat_reverse(in_pat, in_pat->vixmap, vixmap);
+        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
+        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
+
+    // 270 degrees
+    } else {
+        pat_transpose(in_pat, in_pat->vixmap, scratch);
+        pat_flip_h(in_pat, scratch, vixmap);
+        out_pat->gx = in_pat->gy;
+        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
+    }
+
+/*
+    // update the grid offset
+    if (rot && ! flp) {
+        printf("  rotate\n");
+        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
+        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
+    } else if (! rot && flp) {
+        printf("  flip\n");
+        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
+        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
+    } else if (rot && flp) {
+        printf("  rotate & flip\n");
+        out_pat->gx = in_pat->gy;
+        out_pat->gy = in_pat->gx;
+    } else {
+        printf("  normal\n");
+        out_pat->gx = in_pat->gx;
+        out_pat->gy = in_pat->gy;
+    }
+out_pat->gx = 0;
+out_pat->gy = 0;
+
     gint r_idx, w_idx;
 //    printf("  reorder: ");
     for (gint y = 0 ; y < in_pat->vh ; y++) {
@@ -209,25 +317,7 @@ printf("pattern_set_direction\n");
         }
     }
 //    printf("\n");
-
-    // update the grid offset
-    if (rot && ! flp) {
-        printf("  rotate\n");
-        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
-        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
-    } else if (! rot && flp) {
-        printf("  flip\n");
-        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
-        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
-    } else if (rot && flp) {
-        printf("  rotate & flip\n");
-        out_pat->gx = in_pat->gy;
-        out_pat->gy = in_pat->gx;
-    } else {
-        printf("  normal\n");
-        out_pat->gx = in_pat->gx;
-        out_pat->gy = in_pat->gy;
-    }
+*/
 
     return out_pat;
 }

@@ -1,0 +1,42 @@
+rot 90
+------
+A B C D   rot   I E A
+E F G H         J F B
+I J K L         K G C
+                L H D
+
+A B C D  xpose  A E I   flipH   I E A
+E F G H         B F J           J F B
+I J K L         C G K           K G C
+                D H L           L H D
+
+rot 180
+-------
+A B C D   rot   L K J I
+E F G H         H G F E
+I J K L         D C B A
+
+A B C D   rev   L K J I
+E F G H         H G F E
+I J K L         D C B A
+
+
+rot 270
+-------
+A B C D   rot   D H L
+E F G H         C G K
+I J K L         B F J
+                A E I
+
+A B C D  xpose  A E I   flipV   D H L
+E F G H         B F J           C G K
+I J K L         C G K           B F J
+                D H L           A E I
+
+
+alt rot 270
+-----------
+A B C D  flipH  D C B A  xpose  D H L
+E F G H         H G F E         C G K
+I J K L         L K J I         B F J
+                                A E I
