@@ -38,8 +38,11 @@ description(_("Some patterns have \"background pixels\" or \"holes\" that are no
     "so are drawn as always black.  This toggles them to be clear."
 ))
 
-property_boolean (rotate, _("Rotate"), FALSE)
-description(_("Rotate the pattern by ninety degrees."))
+property_int (direction, _("Direction"), 0)
+description(_("Change the orientation of the pattern."))
+    value_range (0, 3)
+    ui_range    (0, 3)
+    ui_steps    (1, 1)
 
 property_double (scale, _("Scale"), 1)
     description (_("Increase size of video pixels"))
@@ -65,9 +68,7 @@ typedef struct
 {
     GeglNode *input;
     GeglNode *prescale;
-    GeglNode *prerot;
     GeglNode *videopix;
-    GeglNode *postrot;
     GeglNode *postcrop;
     GeglNode *postscale;
     GeglNode *output;
@@ -88,14 +89,6 @@ update (GeglOperation *operation)
     gfloat scale_inv = 1.0 / o->scale;
     gegl_node_set (nodes->prescale,  "x", scale_inv, "y", scale_inv, NULL);
     gegl_node_set (nodes->postscale, "x", o->scale,  "y", o->scale,  NULL);
-
-    if (o->rotate) {
-        gegl_node_set (nodes->prerot,  "degrees", -90.0, NULL);
-        gegl_node_set (nodes->postrot, "degrees",  90.0, NULL);
-    } else {
-        gegl_node_set (nodes->prerot,  "degrees",   0.0, NULL);
-        gegl_node_set (nodes->postrot, "degrees",   0.0, NULL);
-    }
 }
 
 
@@ -117,19 +110,9 @@ attach (GeglOperation *operation)
         "sampler", GEGL_SAMPLER_NEAREST,
         NULL
     );
-    nodes->prerot    = gegl_node_new_child (gegl, "operation", "gegl:rotate",
-        "degrees", 0.0,
-        "sampler", GEGL_SAMPLER_NEAREST,
-        NULL
-    );
 
     nodes->videopix  = gegl_node_new_child (gegl, "operation", "kruthers:video-pixelize-core", NULL);
 
-    nodes->postrot   = gegl_node_new_child (gegl, "operation", "gegl:rotate",
-        "degrees", 0.0,
-        "sampler", GEGL_SAMPLER_NEAREST,
-        NULL
-    );
     nodes->postcrop  = gegl_node_new_child (gegl, "operation", "gegl:crop", NULL);
     nodes->postscale = gegl_node_new_child (gegl, "operation", "gegl:scale-ratio",
         "x", 1.0, "y", 1.0,
@@ -144,9 +127,7 @@ attach (GeglOperation *operation)
     gegl_node_link_many (
         nodes->input,
         nodes->prescale,
-        nodes->prerot,
         nodes->videopix,
-        nodes->postrot,
         nodes->postcrop,
         nodes->postscale,
         nodes->output,
@@ -156,6 +137,7 @@ attach (GeglOperation *operation)
     gegl_operation_meta_redirect (operation, "pattern",      nodes->videopix,  "pattern");
     gegl_operation_meta_redirect (operation, "color-style",  nodes->videopix,  "color-style");
     gegl_operation_meta_redirect (operation, "clear-bg",     nodes->videopix,  "clear-bg");
+    gegl_operation_meta_redirect (operation, "direction",    nodes->videopix,  "direction");
     gegl_operation_meta_redirect (operation, "sampler-type", nodes->postscale, "sampler");
 }
 

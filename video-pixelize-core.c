@@ -21,6 +21,9 @@
  *
  */
 
+// TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11
+#include "stdio.h"
+
 #include "config.h"
 #include <glib/gi18n-lib.h>
 
@@ -37,6 +40,12 @@ property_boolean (clear_bg, _("Transparent backround pixels"), FALSE)
 description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B "
     "so are drawn as always black.  This toggles them to be clear."
 ))
+
+property_int (direction, _("Direction"), 0)
+description(_("Change the orientation of the pattern."))
+    value_range (0, 3)
+    ui_range    (0, 3)
+    ui_steps    (1, 1)
 
 #else
 
@@ -59,25 +68,6 @@ typedef struct _Pattern
 
 #include "video-pixelize-patterns.h"
 
-
-static void
-prepare (GeglOperation *operation)
-{
-    const Babl *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
-
-    GeglOperationAreaFilter *op_area;
-    op_area = GEGL_OPERATION_AREA_FILTER (operation);
-
-    // this needs to be some non-zero amount or we get artifacting when scaling up
-    // TODO: determine if the amount needed here depends on the pattern size
-    op_area->left   = 
-    op_area->right  = 100;
-    op_area->top    = 
-    op_area->bottom = 100;
-
-    gegl_operation_set_format (operation, "input", format);
-    gegl_operation_set_format (operation, "output", format);
-}
 
 static void
 get_vixel_colors(
@@ -170,6 +160,79 @@ align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin)
     return roi_offset - ((roi_offset - world_origin) % grid_size);
 }
 
+//  Flip & rotate the pattern to get 4 directions:
+//    0 = no change
+//    1 = flip
+//    2 = flip & rotate
+//    3 = rotate
+static Pattern *
+pattern_set_direction (
+    Pattern *in_pat,
+    gint direction
+) {
+printf("pattern_set_direction\n");
+    Pattern *out_pat = g_malloc (sizeof (Pattern));
+    gint *vixmap = (gint *) g_malloc (sizeof(gint) * in_pat->vw * in_pat->vh);
+    out_pat->vixmap = vixmap;
+
+    gboolean flp = (direction == 1 || direction == 2) ? TRUE : FALSE;
+    gboolean rot = (direction == 2 || direction == 3) ? TRUE : FALSE;
+
+    // never change
+    out_pat->colmap = in_pat->colmap;
+    out_pat->vixn   = in_pat->vixn;
+
+    // rotate swaps width/height
+    out_pat->gw = rot ? in_pat->gh : in_pat->gw;
+    out_pat->gh = rot ? in_pat->gw : in_pat->gh;
+    out_pat->vw = rot ? in_pat->vh : in_pat->vw;
+    out_pat->vh = rot ? in_pat->vw : in_pat->vh;
+
+    // reorder the vixel array
+    gint r_idx, w_idx;
+//    printf("  reorder: ");
+    for (gint y = 0 ; y < in_pat->vh ; y++) {
+        for (gint x = 0 ; x < in_pat->vw ; x++) {
+            r_idx = y * in_pat->vw + x;
+
+            if (rot && ! flp)
+                w_idx = x * in_pat->vh + in_pat->vh - 1 - y;
+            else if (! rot && flp)
+                w_idx = y * in_pat->vw + in_pat->vw - 1 - x;
+            else if (rot && flp)
+                w_idx = x * in_pat->vh + y;
+            else
+                w_idx = r_idx;
+//            printf(" %d", w_idx);
+
+            vixmap[w_idx] = in_pat->vixmap[r_idx];
+        }
+    }
+//    printf("\n");
+
+    // update the grid offset
+    if (rot && ! flp) {
+        printf("  rotate\n");
+        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
+        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
+    } else if (! rot && flp) {
+        printf("  flip\n");
+        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
+        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
+    } else if (rot && flp) {
+        printf("  rotate & flip\n");
+        out_pat->gx = in_pat->gy;
+        out_pat->gy = in_pat->gx;
+    } else {
+        printf("  normal\n");
+        out_pat->gx = in_pat->gx;
+        out_pat->gy = in_pat->gy;
+    }
+
+    return out_pat;
+}
+
+
 static gboolean
 process (GeglOperation       *operation,
          GeglBuffer          *input,
@@ -178,8 +241,10 @@ process (GeglOperation       *operation,
          gint                 level)
 {
     GeglProperties *o = GEGL_PROPERTIES (operation);
-    Pattern *pat = patterns[o->pattern];
     const Babl *format = gegl_operation_get_format(operation, "output");
+
+    Pattern *base_pat = patterns[o->pattern];
+    Pattern *pat = pattern_set_direction(base_pat, o->direction);
 
     // align grid
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
@@ -252,7 +317,29 @@ process (GeglOperation       *operation,
     g_free(gclp_rect);
     g_object_unref(inter_gbuf);
 
+    g_free(pat->vixmap);
+    g_free(pat);
+
     return TRUE;
+}
+
+static void
+prepare (GeglOperation *operation)
+{
+    const Babl *format = babl_format_with_space ("R'G'B'A float", gegl_operation_get_source_space (operation, "input"));
+
+    GeglOperationAreaFilter *op_area;
+    op_area = GEGL_OPERATION_AREA_FILTER (operation);
+
+    // this needs to be some non-zero amount or we get artifacting when scaling up
+    // TODO: determine if the amount needed here depends on the pattern size
+    op_area->left   = 
+    op_area->right  = 100;
+    op_area->top    = 
+    op_area->bottom = 100;
+
+    gegl_operation_set_format (operation, "input", format);
+    gegl_operation_set_format (operation, "output", format);
 }
 
 static void
@@ -263,6 +350,7 @@ gegl_op_class_init (GeglOpClass *klass)
 
     operation_class->prepare = prepare;
     filter_class->process    = process;
+// TODO: REMOVE!?!?!??!?!?!?!?!?!??!?!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111
     operation_class->threaded         = FALSE;
 
     gegl_operation_class_set_keys (operation_class,

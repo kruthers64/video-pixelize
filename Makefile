@@ -43,7 +43,7 @@ test: all
 	    #echo make $(TEST_OUT)/$$b-b.png ; \
 	    #gegl $$f -o $(TEST_OUT)/$$b-b.png -- kruthers:$(META) ; \
 	    echo make $(TEST_OUT)/$$b-c.png ; \
-	    gegl $$f -o $(TEST_OUT)/$$b-c.png -- kruthers:$(META) pattern=plus-3x3 sampler-type=cubic scale=2.29 ; \
+	    gegl $$f -o $(TEST_OUT)/$$b-c.png -- kruthers:$(META) pattern=plus-sign sampler-type=cubic scale=2.29 ; \
 	done
 
 clean:
