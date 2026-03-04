@@ -38,10 +38,10 @@ description(_("Some patterns have \"background pixels\" or \"holes\" that are no
     "so are drawn as always black.  This toggles them to be clear."
 ))
 
-property_int (direction, _("Direction"), 0)
+property_int (orientation, _("Orientation"), 0)
 description(_("Change the orientation of the pattern."))
-    value_range (0, 3)
-    ui_range    (0, 3)
+    value_range (0, 7)
+    ui_range    (0, 7)
     ui_steps    (1, 1)
 
 property_double (scale, _("Scale"), 1)
@@ -137,7 +137,7 @@ attach (GeglOperation *operation)
     gegl_operation_meta_redirect (operation, "pattern",      nodes->videopix,  "pattern");
     gegl_operation_meta_redirect (operation, "color-style",  nodes->videopix,  "color-style");
     gegl_operation_meta_redirect (operation, "clear-bg",     nodes->videopix,  "clear-bg");
-    gegl_operation_meta_redirect (operation, "direction",    nodes->videopix,  "direction");
+    gegl_operation_meta_redirect (operation, "orientation",  nodes->videopix,  "orientation");
     gegl_operation_meta_redirect (operation, "sampler-type", nodes->postscale, "sampler");
 }
 

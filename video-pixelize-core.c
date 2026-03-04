@@ -21,9 +21,6 @@
  *
  */
 
-// TODO: REMOVE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11
-#include "stdio.h"
-
 #include "config.h"
 #include <glib/gi18n-lib.h>
 
@@ -41,10 +38,10 @@ description(_("Some patterns have \"background pixels\" or \"holes\" that are no
     "so are drawn as always black.  This toggles them to be clear."
 ))
 
-property_int (direction, _("Direction"), 0)
+property_int (orientation, _("Orientation"), 0)
 description(_("Change the orientation of the pattern."))
-    value_range (0, 3)
-    ui_range    (0, 3)
+    value_range (0, 7)
+    ui_range    (0, 7)
     ui_steps    (1, 1)
 
 #else
@@ -56,18 +53,158 @@ description(_("Change the orientation of the pattern."))
 #include "gegl-op.h"
 
 
+// ---- patterns --------------------------------------------------------------------------------------
+
 typedef struct _Pattern
 {
-    gint    gx, gy;     // grid start within pattern
+    gint    vw, vh;     // full size of vixmap (larger than grid size)
     gint    gw, gh;     // grid cell size
+    gint    gx, gy;     // grid start within pattern
     gint    vixn;       // number of vixels (ie. video pixels) in pattern + 1 for "background" pixels
     gint   *vixmap;     // vixel layout
-    gint    vw, vh;     // full size of vixmap (larger than grid size)
     gint   *colmap;     // color layout; maps vixels to phosphors (0 = bg, 1,2,3 = r,b,g)
 } Pattern;
 
+static Pattern *
+pattern_clone(Pattern *in_pat) {
+    // allocate & build struct
+    Pattern *out_pat = g_malloc0 (sizeof(Pattern));
+    gint *vixmap = (gint *) g_malloc0 (sizeof(gint) * in_pat->vw * in_pat->vh);
+    gint *colmap = (gint *) g_malloc0 (sizeof(gint) * in_pat->vixn);
+    out_pat->vixmap = vixmap;
+    out_pat->colmap = colmap;
+
+    // copy values
+    out_pat->vw = in_pat->vw;
+    out_pat->vh = in_pat->vh;
+    out_pat->gw = in_pat->gw;
+    out_pat->gh = in_pat->gh;
+    out_pat->gx = in_pat->gx;
+    out_pat->gy = in_pat->gy;
+    out_pat->vixn = in_pat->vixn;
+    for (gint i = 0 ; i < in_pat->vw * in_pat->vh ; i++)
+        out_pat->vixmap[i] = in_pat->vixmap[i];
+    for (gint i = 0 ; i < in_pat->vixn ; i++)
+        out_pat->colmap[i] = in_pat->colmap[i];
+
+    return out_pat;
+}
+
+static void
+pattern_free(Pattern *pat) {
+    g_free(pat->vixmap);
+    g_free(pat->colmap);
+    g_free(pat);
+}
+
+// A B C D              A E I
+// E F G H  transpose   B F J
+// I J K L     ->       C G K
+//                      D H L
+static void
+pattern_transpose(Pattern *in_pat, Pattern *out_pat) {
+    // ignore colmap/vixn since they never change
+    out_pat->vw = in_pat->vh;
+    out_pat->vh = in_pat->vw;
+    out_pat->gw = in_pat->gh;
+    out_pat->gh = in_pat->gw;
+    out_pat->gx = in_pat->gy;
+    out_pat->gy = in_pat->gx;
+    for (gint y = 0 ; y < in_pat->vh ; y++)
+        for (gint x = 0 ; x < in_pat->vw ; x++)
+            out_pat->vixmap[ x * in_pat->vh + y ] = in_pat->vixmap[ y * in_pat->vw + x ];
+}
+
+// A B C D            D C B A
+// E F G H  flip h.   H G F E
+// I J K L     ->     L K J I
+static void
+pattern_flip_h(Pattern *in_pat, Pattern *out_pat) {
+    // ignore colmap/vixn since they never change
+    out_pat->vw = in_pat->vw;
+    out_pat->vh = in_pat->vh;
+    out_pat->gw = in_pat->gw;
+    out_pat->gh = in_pat->gh;
+    out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
+    out_pat->gy = in_pat->gy;
+    for (gint y = 0 ; y < in_pat->vh ; y++)
+        for (gint x = 0 ; x < in_pat->vw ; x++)
+            out_pat->vixmap[ y * in_pat->vw + in_pat->vw - 1 - x ] = in_pat->vixmap[ y * in_pat->vw + x ];
+}
+
+// A B C D            L K J I
+// E F G H  rot 180   H G F E
+// I J K L     ->     D C B A
+static void
+pattern_rot_180(Pattern *in_pat, Pattern *out_pat) {
+    // ignore colmap/vixn since they never change
+    out_pat->vw = in_pat->vw;
+    out_pat->vh = in_pat->vh;
+    out_pat->gw = in_pat->gw;
+    out_pat->gh = in_pat->gh;
+    out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
+    out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
+    gint len = in_pat->vw * in_pat->vh;
+    for (gint i = 0 ; i < len ; i++)
+        out_pat->vixmap[ len - 1 - i ] = in_pat->vixmap[ i ];
+}
+
+// Flip & rotate the pattern to get 8 orientations
+// This flip-rotate-flip-etc progression is the most pleasing when using a diagonally biased pattern
+static Pattern *
+pattern_orient (
+    Pattern *in_pat,
+    gint orientation
+) {
+    Pattern *out_pat = pattern_clone(in_pat);
+    Pattern *scratch = NULL;
+
+    // flip
+    if (orientation == 1) {
+        pattern_flip_h(in_pat, out_pat);
+    // 90 deg
+    } else if (orientation == 2) {
+        scratch = pattern_clone(in_pat);
+        pattern_transpose(in_pat, scratch);
+        pattern_flip_h(scratch, out_pat);
+    // 90 + flip
+    } else if (orientation == 3) {
+        scratch = pattern_clone(in_pat);
+        pattern_flip_h(in_pat, out_pat);
+        pattern_transpose(out_pat, scratch);
+        pattern_flip_h(scratch, out_pat);
+    // 180
+    } else if (orientation == 4) {
+        pattern_rot_180(in_pat, out_pat);
+    // 180 + flip
+    } else if (orientation == 5) {
+        scratch = pattern_clone(in_pat);
+        pattern_rot_180(in_pat, scratch);
+        pattern_flip_h(scratch, out_pat);
+    // 270
+    } else if (orientation == 6) {
+        scratch = pattern_clone(in_pat);
+        pattern_flip_h(in_pat, scratch);
+        pattern_transpose(scratch, out_pat);
+    // 270 + flip
+    } else if (orientation == 7) {
+        scratch = pattern_clone(in_pat);
+        pattern_flip_h(in_pat, out_pat);
+        pattern_transpose(out_pat, scratch);
+        pattern_flip_h(scratch, out_pat);
+    }
+
+    if (scratch) {
+        pattern_free(scratch);
+    }
+
+    return out_pat;
+}
+
 #include "video-pixelize-patterns.h"
 
+
+// ---- video pixelize --------------------------------------------------------------------------------
 
 static void
 get_vixel_colors(
@@ -160,169 +297,6 @@ align_grid(gint grid_offset, gint grid_size, gint roi_offset, gint world_origin)
     return roi_offset - ((roi_offset - world_origin) % grid_size);
 }
 
-// ---- pattern helper routines -----------------------------------------------------------------------
-
-/*
-static Pattern *
-new_pattern(gint w, gint h) {
-    gint *vixmap = (gint *) g_malloc0 (sizeof(gint) * w * h);
-    Pattern *pat = g_malloc (sizeof (Pattern));
-    pat->vixmap = vixmap;
-    return pat;
-}
-
-static Pattern *
-free_pattern(Pattern *pat) {
-    g_free(pat->vixmap);
-    g_free(pat);
-}
-*/
-
-// A B C D  xpose  A E I   flipH   I E A
-// E F G H         B F J           J F B
-// I J K L         C G K           K G C
-//                 D H L           L H D
-
-static void
-pat_transpose(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
-    for (gint y = 0 ; y < pat->vh ; y++)
-        for (gint x = 0 ; x < pat->vw ; x++)
-            vixmap_out[ x * pat->vh + y ] = vixmap_in[ y * pat->vw + x ];
-}
-
-// A:   0,0     ->      2,0
-// idx: 0       ->      2
-//      0*3
-
-static void
-pat_flip_h(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
-    for (gint y = 0 ; y < pat->vh ; y++)
-        for (gint x = 0 ; x < pat->vw ; x++)
-            vixmap_out[ y * pat->vw + pat->vw - 1 - x ] = vixmap_in[ y * pat->vw + x ];
-}
-
-static void
-pat_copy(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
-    gint len = pat->vw * pat->vh;
-    for (gint i = 0 ; i < len ; i++)
-        vixmap_out[ i ] = pat->vixmap[ i ];
-}
-
-static void
-pat_reverse(Pattern *pat, gint *vixmap_in, gint *vixmap_out) {
-    gint len = pat->vw * pat->vh;
-    for (gint i = 0 ; i < len ; i++)
-        vixmap_out[ len - 1 - i ] = pat->vixmap[ i ];
-}
-
-//  Flip & rotate the pattern to get 4 directions:
-//    0 = no change
-//    1 = flip
-//    2 = rotate
-//    3 = flip & rotate
-static Pattern *
-pattern_set_direction (
-    Pattern *in_pat,
-    gint direction
-) {
-//printf("pattern_set_direction\n");
-    gint *vixmap = (gint *) g_malloc (sizeof(gint) * in_pat->vw * in_pat->vh);
-    gint *scratch = (gint *) g_malloc (sizeof(gint) * in_pat->vw * in_pat->vh);
-
-    Pattern *out_pat = g_malloc (sizeof (Pattern));
-    out_pat->vixmap = vixmap;
-
-    // never change
-    out_pat->colmap = in_pat->colmap;
-    out_pat->vixn   = in_pat->vixn;
-
-//    gboolean flp = (direction == 1 || direction == 3) ? TRUE : FALSE;
-//    gboolean rot = (direction == 2 || direction == 3) ? TRUE : FALSE;
-    gint rot = direction % 4;
-
-    // rotate 90 & 270 swaps width/height
-    out_pat->gw = (rot == 1 || rot == 3) ? in_pat->gh : in_pat->gw;
-    out_pat->gh = (rot == 1 || rot == 3) ? in_pat->gw : in_pat->gh;
-    out_pat->vw = (rot == 1 || rot == 3) ? in_pat->vh : in_pat->vw;
-    out_pat->vh = (rot == 1 || rot == 3) ? in_pat->vw : in_pat->vh;
-
-    if (rot == 0) {
-        pat_copy(in_pat, in_pat->vixmap, vixmap);
-        out_pat->gx = in_pat->gx;
-        out_pat->gy = in_pat->gy;
-
-    // 90 deg
-    } else if (rot == 1) {
-        pat_transpose(in_pat, in_pat->vixmap, scratch);
-        pat_flip_h(in_pat, scratch, vixmap);
-        // gx=0 gy=2 gw=6 gh=12 vw=6 vh=16
-        // x: 16 - 2 - 12 = 2
-        // y: 0
-        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
-        out_pat->gy = in_pat->gx;
-
-    // 180 degrees
-    } else if (rot == 2) {
-        pat_reverse(in_pat, in_pat->vixmap, vixmap);
-        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
-        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
-
-    // 270 degrees
-    } else {
-        pat_transpose(in_pat, in_pat->vixmap, scratch);
-        pat_flip_h(in_pat, scratch, vixmap);
-        out_pat->gx = in_pat->gy;
-        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
-    }
-
-/*
-    // update the grid offset
-    if (rot && ! flp) {
-        printf("  rotate\n");
-        out_pat->gx = in_pat->vh - in_pat->gy - in_pat->gh;
-        out_pat->gy = in_pat->vw - in_pat->gx - in_pat->gw;
-    } else if (! rot && flp) {
-        printf("  flip\n");
-        out_pat->gx = in_pat->vw - in_pat->gx - in_pat->gw;
-        out_pat->gy = in_pat->vh - in_pat->gy - in_pat->gh;
-    } else if (rot && flp) {
-        printf("  rotate & flip\n");
-        out_pat->gx = in_pat->gy;
-        out_pat->gy = in_pat->gx;
-    } else {
-        printf("  normal\n");
-        out_pat->gx = in_pat->gx;
-        out_pat->gy = in_pat->gy;
-    }
-out_pat->gx = 0;
-out_pat->gy = 0;
-
-    gint r_idx, w_idx;
-//    printf("  reorder: ");
-    for (gint y = 0 ; y < in_pat->vh ; y++) {
-        for (gint x = 0 ; x < in_pat->vw ; x++) {
-            r_idx = y * in_pat->vw + x;
-
-            if (rot && ! flp)
-                w_idx = x * in_pat->vh + in_pat->vh - 1 - y;
-            else if (! rot && flp)
-                w_idx = y * in_pat->vw + in_pat->vw - 1 - x;
-            else if (rot && flp)
-                w_idx = x * in_pat->vh + y;
-            else
-                w_idx = r_idx;
-//            printf(" %d", w_idx);
-
-            vixmap[w_idx] = in_pat->vixmap[r_idx];
-        }
-    }
-//    printf("\n");
-*/
-
-    return out_pat;
-}
-
-
 static gboolean
 process (GeglOperation       *operation,
          GeglBuffer          *input,
@@ -333,8 +307,7 @@ process (GeglOperation       *operation,
     GeglProperties *o = GEGL_PROPERTIES (operation);
     const Babl *format = gegl_operation_get_format(operation, "output");
 
-    Pattern *base_pat = patterns[o->pattern];
-    Pattern *pat = pattern_set_direction(base_pat, o->direction);
+    Pattern *pat = pattern_orient(patterns[o->pattern], o->orientation);
 
     // align grid
     GeglRectangle *world = gegl_operation_source_get_bounding_box(operation, "input");
@@ -407,8 +380,7 @@ process (GeglOperation       *operation,
     g_free(gclp_rect);
     g_object_unref(inter_gbuf);
 
-    g_free(pat->vixmap);
-    g_free(pat);
+    pattern_free(pat);
 
     return TRUE;
 }
@@ -440,8 +412,6 @@ gegl_op_class_init (GeglOpClass *klass)
 
     operation_class->prepare = prepare;
     filter_class->process    = process;
-// TODO: REMOVE!?!?!??!?!?!?!?!?!??!?!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111
-    operation_class->threaded         = FALSE;
 
     gegl_operation_class_set_keys (operation_class,
         "name",             "kruthers:video-pixelize-core",

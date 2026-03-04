@@ -177,12 +177,12 @@ sub get_pattern_data {
     my ($vw, $vh) = ($xpm_dims->[0], $xpm_dims->[1]);
     my ($gx, $gy, $gw, $gh) = grid_dimensions($vixmap, $vw, $vh);
     my $dims = {
-        'gx'    => $gx,
-        'gy'    => $gy,
-        'gw'    => $gw,
-        'gh'    => $gh,
         'vw'    => $vw,
         'vh'    => $vh,
+        'gw'    => $gw,
+        'gh'    => $gh,
+        'gx'    => $gx,
+        'gy'    => $gy,
         'vixn'  => $vixn,
     };
 
@@ -348,14 +348,14 @@ sub generate_pattern_data {
     $text .= "};\n";
     $text .= "Pattern ${identifier} = {\n";
     $text .= "    ";
-    $text .= $dims->{'gx'} . ", ";
-    $text .= $dims->{'gy'} . ", ";
-    $text .= $dims->{'gw'} . ", ";
-    $text .= $dims->{'gh'} . ", ";
-    $text .= $dims->{'vixn'} . ", ";
-    $text .= "${identifier}_vixmap, ";
     $text .= $dims->{'vw'} . ", ";
     $text .= $dims->{'vh'} . ", ";
+    $text .= $dims->{'gw'} . ", ";
+    $text .= $dims->{'gh'} . ", ";
+    $text .= $dims->{'gx'} . ", ";
+    $text .= $dims->{'gy'} . ", ";
+    $text .= $dims->{'vixn'} . ", ";
+    $text .= "${identifier}_vixmap, ";
     $text .= "${identifier}_colmap\n";
     $text .= "};\n";
     $text .= "\n";
