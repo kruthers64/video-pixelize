@@ -10,6 +10,7 @@ my $HEADER_GEGL_ENUM = "video-pixelize-gegl-enum.h";
 my $HEADER_GEGL_ENUM_CORE = "video-pixelize-core-gegl-enum.h";
 my $PATTERN_DIR = "patterns";
 my $GRID_SUFFIX = "GRID";
+my $DEFAULT_SUFFIX = "DEFAULT";
 my $GEGL_ENUM_PREFIX = "GEGL_VIDEO_PIXELIZE_TYPE";
 my $GEGL_ENUM_PREFIX_CORE = "GEGL_VIDEO_PIXELIZE_CORE_TYPE";
 my $GEGL_ENUM_TEMPLATE = '
@@ -41,6 +42,7 @@ sub main {
     my @files = glob "$PATTERN_DIR/*.xpm";
     my $patterns = [];
     my ($pattern_text, $gegl_enum_text, $gegl_enum_text_core) = ("", "", "");
+    my $default = undef;
     foreach my $filename (@files) {
         # GRID files augment patterns; don't treat them as regular patterns themselves
         if ($filename =~ m/$GRID_SUFFIX.xpm/) {
@@ -48,6 +50,9 @@ sub main {
         }
         my $pattern = (split(m#[/\.]#, $filename))[1];
         $pattern =~ s/^\d+-//;
+        if ($pattern =~ m/(.*)-$DEFAULT_SUFFIX$/) {
+            $default = $pattern = $1;
+        }
         push(@$patterns, $pattern);
         my $xpm = load_xpm($filename);
 
@@ -80,8 +85,8 @@ sub main {
     write_preamble($cfh);
     print($pfh $pattern_text);
     write_patterns_array($pfh, $patterns);
-    write_gegl_enum_file($gfh, $patterns, $gegl_enum_text,      $GEGL_ENUM_TEMPLATE,      $GEGL_ENUM_PREFIX);
-    write_gegl_enum_file($cfh, $patterns, $gegl_enum_text_core, $GEGL_ENUM_TEMPLATE_CORE, $GEGL_ENUM_PREFIX_CORE);
+    write_gegl_enum_file($gfh, $patterns, $default, $gegl_enum_text,      $GEGL_ENUM_TEMPLATE,      $GEGL_ENUM_PREFIX);
+    write_gegl_enum_file($cfh, $patterns, $default, $gegl_enum_text_core, $GEGL_ENUM_TEMPLATE_CORE, $GEGL_ENUM_PREFIX_CORE);
 
     close($pfh);
     close($gfh);
@@ -388,8 +393,11 @@ sub generate_gegl_enum_text {
 
 
 sub write_gegl_enum_file {
-    my ($fh, $patterns, $gegl_enum_text, $template, $prefix) = @_;
-    my $default_prop = get_gegl_property($patterns->[0], $prefix);
+    my ($fh, $patterns, $default, $gegl_enum_text, $template, $prefix) = @_;
+    if (not $default) {
+        $default = $patterns->[0];
+    }
+    my $default_prop = get_gegl_property($default, $prefix);
     $gegl_enum_text =~ s/\s+$//;
     $template =~ s/^\s+//;
     $template =~ s/__ENUM_VALUES__/$gegl_enum_text/;

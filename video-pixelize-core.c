@@ -34,7 +34,7 @@ property_double (color_style, _("Color style:  RGB phosphors <-> Full color"), 0
     ui_range    (0.0, 1.0)
 
 property_boolean (clear_bg, _("Transparent backround pixels"), FALSE)
-description(_("Some patterns have \"background pixels\" or \"holes\" that are not R, G or B "
+description(_("Some patterns have background pixels or holes that are not R, G or B "
     "so are drawn as always black.  This toggles them to be clear."
 ))
 
