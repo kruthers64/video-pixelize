@@ -114,7 +114,13 @@ gegl_op_class_init (GeglOpClass *klass)
         "name",             "kruthers:krtest01",
         "title",          _("krtest01"),
         "categories",       "distort",
-        "description",    _("Demonstrate a bug or problem."),
+        "description",    _(
+            "This demonstrates a problem with trying to do math with the input\n"
+            "size in a meta operation.  The information is not available until\n"
+            "after the first update, so the first draw is bad.  Even if you tweak\n"
+            "things so the first open of the tool looks good, the problem will\n"
+            "show when you edit a filter already applied to a layer."
+        ),
         "gimp:menu-path",   "<Image>/Filters/Kruthers",
         "gimp:menu-label",  "krtest01",
         NULL);
