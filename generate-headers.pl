@@ -411,7 +411,7 @@ sub write_gegl_enum_file {
 
 sub get_c_identifier {
     my ($pattern) = @_;
-    $pattern =~ s/[^a-z0-9]/_/;
+    $pattern =~ s/[^A-Za-z0-9]/_/g;
     return $pattern;
 }
 
