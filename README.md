@@ -14,8 +14,12 @@ There are also many knobs to tweak.
 ![Staggered scale=2.0](screenshots/example-01.png) ![Hexagonal](screenshots/example-02.png)
 ![LCD staggered large](screenshots/example-03.png) ![Square pinwheel color-style=1.0 scale=4.0 over blurred original](screenshots/example-04.png) 
 
+The last example uses the `Square pinwheel` pattern, scale of 4.0,
+`Transparent Background Pixels` checked, and is layered over an blurred
+copy of the original image.
+
 ## Usage example
-Embedding video file didn't work - download to view:
+Download to view (embed not working):
 [example-usage.mp4](screenshots/example-usage.mp4) 
 
 ## Bugs
