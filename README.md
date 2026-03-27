@@ -15,7 +15,8 @@ There are also many knobs to tweak.
 ![LCD staggered large](screenshots/example-03.png) ![Square pinwheel color-style=1.0 scale=4.0 over blurred original](screenshots/example-04.png) 
 
 ## Usage example
-![](screenshots/example-usage.mp4) 
+Embedding video file didn't work - download to view:
+[example-usage.mp4](screenshots/example-usage.mp4) 
 
 ## Bugs
 1. The `Transparent Background Pixels` checkbox will not really work
