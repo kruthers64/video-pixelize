@@ -75,7 +75,7 @@ clean:
 	rm -vf $(INSTALL_DIR)/$(META).so
 	rm -vf $(INSTALL_DIR)/$(KT01).so
 	rm -vf $(INSTALL_DIR)/$(KT02).so
-	rm -vf $(RELEASE_BUILD_DIR)
+	rm -rvf $(RELEASE_BUILD_DIR)
 
 release: all
 	mkdir -p $(RELEASE_BUILD_DIR)
