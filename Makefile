@@ -1,4 +1,4 @@
-VERSION := 0.9.0
+VERSION := 0.9.2
 RELEASE_NAME := kruthers-video-pixelize
 RELEASE_BUILD_DIR := /tmp/$(RELEASE_NAME)
 
@@ -85,3 +85,6 @@ release: all
 
 readme:
 	pandoc -o README.html README.md
+
+tagname:
+	@echo v$(VERSION)
